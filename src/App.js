@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import supabase from "./supabase";
 import RatingView from "./RatingView";
+import BatchRatingView from "./BatchRatingView";
 
 // ─── Model catalogue ───────────────────────────────────────────────────
 const MODELS = [
@@ -163,15 +164,20 @@ function ModelSelect({ label, value, onChange, disabled }) {
 // ─── App ───────────────────────────────────────────────────────────────
 export default function App() {
 
-  // ── Hash routing: delegate to RatingView if URL is #rate/<uuid> ──
+  // ── Hash routing: delegate to RatingView (#rate/) or BatchRatingView (#batch/) ──
   const [ratingEvalId, setRatingEvalId] = useState(() => {
     const h = window.location.hash;
     return h.startsWith("#rate/") ? h.slice(6) : null;
+  });
+  const [batchEvalIds, setBatchEvalIds] = useState(() => {
+    const h = window.location.hash;
+    return h.startsWith("#batch/") ? h.slice(7).split(",") : null;
   });
   useEffect(() => {
     const handler = () => {
       const h = window.location.hash;
       setRatingEvalId(h.startsWith("#rate/") ? h.slice(6) : null);
+      setBatchEvalIds(h.startsWith("#batch/") ? h.slice(7).split(",") : null);
     };
     window.addEventListener("hashchange", handler);
     return () => window.removeEventListener("hashchange", handler);
@@ -201,6 +207,12 @@ export default function App() {
   // Sharing state
   const [shareLoading, setShareLoading] = useState(null);  // entry.id being shared
   const [copiedId, setCopiedId]         = useState(null);  // entry.id whose link was just copied
+
+  // Select mode (batch share)
+  const [selectMode,   setSelectMode]   = useState(false);
+  const [selectedIds,  setSelectedIds]  = useState(new Set());
+  const [batchLoading, setBatchLoading] = useState(false);
+  const [batchCopied,  setBatchCopied]  = useState(false);
 
   // Human ratings
   const [humanRatings, setHumanRatings]       = useState({});
@@ -320,6 +332,58 @@ export default function App() {
       setErr("Share failed: " + (e?.message || e?.details || JSON.stringify(e) || "unknown error"));
     }
     setShareLoading(null);
+  };
+
+  // Push selected evals to Supabase and copy batch link to clipboard
+  const shareBatch = async () => {
+    if (!process.env.REACT_APP_SUPABASE_URL || !process.env.REACT_APP_SUPABASE_ANON_KEY) {
+      setErr("Share failed: REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY are not set in .env — add them and restart the dev server.");
+      return;
+    }
+    setBatchLoading(true);
+    try {
+      const selectedEntries = history.filter(e => selectedIds.has(e.id));
+      let updatedHistory = [...history];
+      const supabaseIds = [];
+
+      for (const entry of selectedEntries) {
+        if (entry.supabaseId) {
+          supabaseIds.push(entry.supabaseId);
+        } else {
+          const v1IsVA = Math.random() > 0.5;
+          const { data, error } = await supabase.from("evals").insert({
+            local_id:     String(entry.id),
+            topic:        entry.topic,
+            content_type: entry.contentType,
+            exam:         entry.exam,
+            models:       entry.models,
+            blind: {
+              v1_text:  v1IsVA ? entry.results.vA : entry.results.vB,
+              v2_text:  v1IsVA ? entry.results.vB : entry.results.vA,
+              v1_is_vA: v1IsVA,
+            },
+            ai_scores:    entry.results.scores,
+            full_results: entry.results,
+          }).select("id").single();
+
+          if (error) throw error;
+          const supabaseId = data.id;
+          supabaseIds.push(supabaseId);
+          updatedHistory = updatedHistory.map(e => e.id === entry.id ? { ...e, supabaseId, v1IsVA } : e);
+        }
+      }
+
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(updatedHistory));
+      setHistory(updatedHistory);
+
+      const url = `${window.location.origin}/#batch/${supabaseIds.join(",")}`;
+      await navigator.clipboard.writeText(url);
+      setBatchCopied(true);
+      setTimeout(() => setBatchCopied(false), 2500);
+    } catch(e) {
+      setErr("Batch share failed: " + (e?.message || e?.details || JSON.stringify(e) || "unknown error"));
+    }
+    setBatchLoading(false);
   };
 
   const refreshScoresRatings = () => {
@@ -457,6 +521,7 @@ Return ONLY this JSON:
 
   // ── Hash routing: early exit after all hooks ───────────────────
   if (ratingEvalId) return <RatingView evalId={ratingEvalId} />;
+  if (batchEvalIds) return <BatchRatingView evalIds={batchEvalIds} />;
 
   // ── Render ────────────────────────────────────────────────────────
   return (
@@ -554,19 +619,53 @@ Return ONLY this JSON:
               {/* ── History ── */}
               {tab==="history"&&(
                 <div>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-                    <span style={{fontSize:12.5,fontFamily:"monospace",color:C.muted}}>
-                      {history.length} eval{history.length!==1?"s":""} · click to restore · Share to get a blind rating link
-                    </span>
-                    {history.length>0&&(
-                      <button onClick={()=>{
-                        if(window.confirm("Clear all eval history?")) {
-                          setHistory([]); localStorage.removeItem(HISTORY_KEY);
-                        }
-                      }} style={{fontSize:10,fontFamily:"monospace",color:C.muted,background:"transparent",border:`1px solid ${C.b}`,padding:"3px 9px",borderRadius:5,cursor:"pointer"}}>
-                        clear all
-                      </button>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,gap:10,flexWrap:"wrap"}}>
+                    {selectMode ? (
+                      <span style={{fontSize:12.5,fontFamily:"monospace",color:C.muted}}>
+                        Select evals for a batch rating link
+                      </span>
+                    ) : (
+                      <span style={{fontSize:12.5,fontFamily:"monospace",color:C.muted}}>
+                        {history.length} eval{history.length!==1?"s":""} · click to restore · Share for blind ratings
+                      </span>
                     )}
+                    <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                      {selectMode ? (
+                        <>
+                          <button onClick={shareBatch} disabled={selectedIds.size===0||batchLoading} style={{
+                            fontSize:12,fontFamily:"monospace",padding:"4px 12px",borderRadius:5,
+                            cursor:selectedIds.size===0||batchLoading?"not-allowed":"pointer",
+                            border:`1px solid ${batchCopied?C.accent:selectedIds.size>0?C.accent:C.b}`,
+                            background:batchCopied?"rgba(0,200,150,0.1)":"transparent",
+                            color:batchCopied?C.accent:selectedIds.size>0?C.accent:C.dim,
+                          }}>
+                            {batchLoading?"sharing…":batchCopied?"✓ link copied":`Share batch (${selectedIds.size}) →`}
+                          </button>
+                          <button onClick={()=>{setSelectMode(false);setSelectedIds(new Set());}} style={{
+                            fontSize:12,fontFamily:"monospace",color:C.muted,background:"transparent",
+                            border:`1px solid ${C.b}`,padding:"4px 10px",borderRadius:5,cursor:"pointer",
+                          }}>Done</button>
+                        </>
+                      ) : (
+                        <>
+                          {history.length>0&&(
+                            <button onClick={()=>{setSelectMode(true);setSelectedIds(new Set());}} style={{
+                              fontSize:12,fontFamily:"monospace",color:C.muted,background:"transparent",
+                              border:`1px solid ${C.b}`,padding:"4px 10px",borderRadius:5,cursor:"pointer",
+                            }}>Select</button>
+                          )}
+                          {history.length>0&&(
+                            <button onClick={()=>{
+                              if(window.confirm("Clear all eval history?")) {
+                                setHistory([]); localStorage.removeItem(HISTORY_KEY);
+                              }
+                            }} style={{fontSize:10,fontFamily:"monospace",color:C.muted,background:"transparent",border:`1px solid ${C.b}`,padding:"3px 9px",borderRadius:5,cursor:"pointer"}}>
+                              clear all
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
 
                   {history.length===0 ? (
@@ -581,14 +680,44 @@ Return ONLY this JSON:
                         const ratings = entry.supabaseId ? (humanRatings[entry.supabaseId] || []) : [];
 
                         return (
-                          <div key={entry.id} className="hist-card" onClick={()=>restoreEval(entry)} style={{
-                            background:C.s2,border:`1px solid ${C.b}`,borderRadius:8,
-                            padding:"12px 14px",cursor:"pointer",position:"relative",transition:"border-color 0.15s",
-                          }}>
-                            <button onClick={e=>{e.stopPropagation();deleteEntry(entry.id);}} style={{
-                              position:"absolute",top:8,right:10,background:"transparent",border:"none",
-                              color:C.muted,cursor:"pointer",fontSize:16,lineHeight:1,padding:"2px 5px",
-                            }}>×</button>
+                          <div key={entry.id} className="hist-card"
+                            onClick={() => {
+                              if (selectMode) {
+                                setSelectedIds(prev => {
+                                  const next = new Set(prev);
+                                  if (next.has(entry.id)) next.delete(entry.id);
+                                  else next.add(entry.id);
+                                  return next;
+                                });
+                              } else {
+                                restoreEval(entry);
+                              }
+                            }}
+                            style={{
+                              background:C.s2,
+                              border:`1px solid ${selectMode&&selectedIds.has(entry.id)?C.accent:C.b}`,
+                              borderRadius:8,padding:"12px 14px",cursor:"pointer",
+                              position:"relative",transition:"border-color 0.15s",
+                            }}>
+
+                            {/* Top-right: checkmark badge in select mode, × delete button otherwise */}
+                            {selectMode ? (
+                              <div style={{
+                                position:"absolute",top:8,right:10,
+                                width:20,height:20,borderRadius:"50%",
+                                background:selectedIds.has(entry.id)?C.accent:C.dim,
+                                display:"flex",alignItems:"center",justifyContent:"center",
+                                fontSize:11,color:selectedIds.has(entry.id)?"#000":C.bg,
+                                flexShrink:0,
+                              }}>
+                                {selectedIds.has(entry.id)?"✓":""}
+                              </div>
+                            ) : (
+                              <button onClick={e=>{e.stopPropagation();deleteEntry(entry.id);}} style={{
+                                position:"absolute",top:8,right:10,background:"transparent",border:"none",
+                                color:C.muted,cursor:"pointer",fontSize:16,lineHeight:1,padding:"2px 5px",
+                              }}>×</button>
+                            )}
 
                             <div style={{fontSize:15,fontWeight:600,color:C.text,marginBottom:7,paddingRight:24}}>
                               {entry.topic.length>80 ? entry.topic.slice(0,80)+"…" : entry.topic}
@@ -617,35 +746,37 @@ Return ONLY this JSON:
                               ))}
                             </div>
 
-                            {/* Bottom action bar */}
-                            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",paddingTop:8,borderTop:`1px solid ${C.b}`,gap:8}}>
-                              <button onClick={e=>{e.stopPropagation();restoreEval(entry);}} style={{
-                                padding:"5px 14px",borderRadius:6,flexShrink:0,
-                                border:`1px solid ${C.b}`,background:C.bg,
-                                color:C.text,fontSize:12,fontFamily:"monospace",cursor:"pointer",
-                                display:"flex",alignItems:"center",gap:8,
-                              }}>
-                                <span style={{fontWeight:600}}>Scoring</span>
-                                {tA!==null&&<>
-                                  <span style={{color:C.dim}}>·</span>
-                                  <span style={{color:C.blue}}>A {tA}</span>
-                                  <span style={{color:C.accent}}>B {tB}</span>
-                                  {ratings.length>0&&<><span style={{color:C.dim}}>·</span><span style={{color:C.warn}}>{ratings.length}H</span></>}
-                                </>}
-                              </button>
-                              <button onClick={async e => {
-                                e.stopPropagation();
-                                await shareEval(entry);
-                              }} style={{
-                                padding:"4px 12px",borderRadius:5,flexShrink:0,
-                                border:`1px solid ${copiedId===entry.id?C.accent:C.b}`,
-                                background:"transparent",
-                                color:copiedId===entry.id?C.accent:C.muted,
-                                fontSize:11.5,fontFamily:"monospace",cursor:"pointer",
-                              }}>
-                                {shareLoading===entry.id?"sharing…":copiedId===entry.id?"✓ link copied":entry.supabaseId?"copy link":"share →"}
-                              </button>
-                            </div>
+                            {/* Bottom action bar — hidden in select mode */}
+                            {!selectMode&&(
+                              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",paddingTop:8,borderTop:`1px solid ${C.b}`,gap:8}}>
+                                <button onClick={e=>{e.stopPropagation();restoreEval(entry);}} style={{
+                                  padding:"5px 14px",borderRadius:6,flexShrink:0,
+                                  border:`1px solid ${C.b}`,background:C.bg,
+                                  color:C.text,fontSize:12,fontFamily:"monospace",cursor:"pointer",
+                                  display:"flex",alignItems:"center",gap:8,
+                                }}>
+                                  <span style={{fontWeight:600}}>Scoring</span>
+                                  {tA!==null&&<>
+                                    <span style={{color:C.dim}}>·</span>
+                                    <span style={{color:C.blue}}>A {tA}</span>
+                                    <span style={{color:C.accent}}>B {tB}</span>
+                                    {ratings.length>0&&<><span style={{color:C.dim}}>·</span><span style={{color:C.warn}}>{ratings.length}H</span></>}
+                                  </>}
+                                </button>
+                                <button onClick={async e => {
+                                  e.stopPropagation();
+                                  await shareEval(entry);
+                                }} style={{
+                                  padding:"4px 12px",borderRadius:5,flexShrink:0,
+                                  border:`1px solid ${copiedId===entry.id?C.accent:C.b}`,
+                                  background:"transparent",
+                                  color:copiedId===entry.id?C.accent:C.muted,
+                                  fontSize:11.5,fontFamily:"monospace",cursor:"pointer",
+                                }}>
+                                  {shareLoading===entry.id?"sharing…":copiedId===entry.id?"✓ link copied":entry.supabaseId?"copy link":"share →"}
+                                </button>
+                              </div>
+                            )}
                           </div>
                         );
                       })}
