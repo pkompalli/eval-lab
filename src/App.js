@@ -619,33 +619,22 @@ Return ONLY this JSON:
                               ))}
                             </div>
 
-                            {tA!==null&&(
-                              <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:8,flexWrap:"wrap"}}>
-                                <span style={{fontSize:12,fontFamily:"monospace",color:C.muted}}>AI:</span>
-                                <span style={{fontSize:13,fontFamily:"monospace",color:C.blue}}>A {tA}/40</span>
-                                <span style={{fontSize:13,fontFamily:"monospace",color:C.accent}}>B {tB}/40</span>
-                                <span style={{fontSize:12,fontFamily:"monospace",color:winner==="B"?C.accent:winner==="A"?C.blue:C.muted}}>
-                                  {winner==="B"?"B wins":winner==="A"?"A wins":"tie"} · Δ{Math.abs(tB-tA)}
-                                </span>
-                              </div>
-                            )}
-
-                            {/* Human ratings row */}
-                            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",paddingTop:8,borderTop:`1px solid ${C.b}`}}>
-                              <div style={{fontSize:12,fontFamily:"monospace",color:C.muted,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-                                {ratings.length > 0 ? (
-                                  <>
-                                    <span style={{color:C.warn}}>{ratings.length} human rating{ratings.length!==1?"s":""}</span>
-                                    {hAvg&&<>
-                                      <span style={{color:C.dim}}>·</span>
-                                      <span>A avg <span style={{color:C.blue}}>{hAvg.totA.toFixed(0)}/40</span></span>
-                                      <span>B avg <span style={{color:C.accent}}>{hAvg.totB.toFixed(0)}/40</span></span>
-                                    </>}
-                                  </>
-                                ) : (
-                                  <span style={{color:C.dim}}>{entry.supabaseId ? "no ratings yet" : "not shared"}</span>
-                                )}
-                              </div>
+                            {/* Bottom action bar */}
+                            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",paddingTop:8,borderTop:`1px solid ${C.b}`,gap:8}}>
+                              <button onClick={e=>{e.stopPropagation();restoreEval(entry);}} style={{
+                                padding:"5px 14px",borderRadius:6,flexShrink:0,
+                                border:`1px solid ${C.b}`,background:C.bg,
+                                color:C.text,fontSize:12,fontFamily:"monospace",cursor:"pointer",
+                                display:"flex",alignItems:"center",gap:8,
+                              }}>
+                                <span style={{fontWeight:600}}>Scoring</span>
+                                {tA!==null&&<>
+                                  <span style={{color:C.dim}}>·</span>
+                                  <span style={{color:C.blue}}>A {tA}</span>
+                                  <span style={{color:C.accent}}>B {tB}</span>
+                                  {ratings.length>0&&<><span style={{color:C.dim}}>·</span><span style={{color:C.warn}}>{ratings.length}H</span></>}
+                                </>}
+                              </button>
                               <button onClick={async e => {
                                 e.stopPropagation();
                                 await shareEval(entry);
