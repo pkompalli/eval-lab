@@ -203,9 +203,10 @@ export default function App() {
   const [copiedId, setCopiedId]         = useState(null);  // entry.id whose link was just copied
 
   // Human ratings
-  const [humanRatings, setHumanRatings]       = useState({});  // { [supabaseId]: [ratings] } for history tab
-  const [scoresHumanRatings, setScoresHumanRatings] = useState([]);  // for current scores tab
-  const [sharedEval, setSharedEval]           = useState(null); // { supabaseId, v1IsVA } for current view
+  const [humanRatings, setHumanRatings]       = useState({});
+  const [scoresHumanRatings, setScoresHumanRatings] = useState([]);
+  const [sharedEval, setSharedEval]           = useState(null);
+  const [ratingView, setRatingView]           = useState("ai"); // "ai" | "h0","h1",... | "avg"
 
   useEffect(() => { setHistory(loadHistory()); }, []);
 
@@ -261,6 +262,7 @@ export default function App() {
     setSteps({}); setLog([]); setErr(null);
     setCurrentEntryId(entry.id);
     setSharedEval(entry.supabaseId ? { supabaseId: entry.supabaseId, v1IsVA: entry.v1IsVA } : null);
+    setRatingView("ai");
     setPhase("done");
     setTab("scores");
   };
@@ -332,7 +334,7 @@ export default function App() {
   const run = useCallback(async () => {
     if (!topic.trim() || phase==="running") return;
     setPhase("running"); setErr(null); setLog([]); setR({}); setSteps({});
-    setSharedEval(null); setCurrentEntryId(null); setTab("pipeline");
+    setSharedEval(null); setCurrentEntryId(null); setRatingView("ai"); setTab("pipeline");
 
     const type = ct.toLowerCase();
     const prompt = ct==="Lesson"
@@ -443,7 +445,7 @@ Return ONLY this JSON:
     { id:"pipeline",  label:"Pipeline",  off: phase==="idle" },
     { id:"content",   label:"Content",   off: !R.vA },
     { id:"critiques", label:"Critiques", off: !R.valCritique },
-    { id:"scores",    label: sc ? `Scores · ${totA} vs ${totB}` : "Scores", off: !sc },
+    { id:"scores",    label: sc ? `Ratings · ${totA} vs ${totB}` : "Ratings", off: !sc },
   ];
 
   const stepModels = {
@@ -735,99 +737,93 @@ Return ONLY this JSON:
                 </div>
               )}
 
-              {/* ── Scores ── */}
+              {/* ── Ratings ── */}
               {tab==="scores"&&sc&&(()=>{
-                const humanAvg = sharedEval ? avgHumanScores(scoresHumanRatings, sharedEval.v1IsVA) : null;
                 const currentEntry = history.find(e => e.id === currentEntryId);
+
+                // Build dropdown options
+                const ratingOptions = [{ id:"ai", label:"🤖 AI Evaluation" }];
+                if (sharedEval) {
+                  scoresHumanRatings.forEach((r,i) =>
+                    ratingOptions.push({ id:`h${i}`, label:`👤 ${r.rater_name||`Rater ${i+1}`}` })
+                  );
+                  if (scoresHumanRatings.length > 0)
+                    ratingOptions.push({ id:"avg", label:`📊 Human Average (${scoresHumanRatings.length})` });
+                }
+
+                // Normalise selected view into { vA, vB } where each criterion has { score, text }
+                let tableData = null;
+                if (ratingView === "ai") {
+                  tableData = {
+                    vA: Object.fromEntries(CRITERIA.map(c=>[c.key,{score:sc.vA[c.key].score, text:sc.vA[c.key].feedback||null}])),
+                    vB: Object.fromEntries(CRITERIA.map(c=>[c.key,{score:sc.vB[c.key].score, text:sc.vB[c.key].feedback||null}])),
+                  };
+                } else if (ratingView==="avg" && sharedEval) {
+                  const avg = avgHumanScores(scoresHumanRatings, sharedEval.v1IsVA);
+                  if (avg) tableData = {
+                    vA: Object.fromEntries(CRITERIA.map(c=>[c.key,{score:avg.vA[c.key], text:null}])),
+                    vB: Object.fromEntries(CRITERIA.map(c=>[c.key,{score:avg.vB[c.key], text:null}])),
+                  };
+                } else if (ratingView.startsWith("h") && sharedEval) {
+                  const r = scoresHumanRatings[parseInt(ratingView.slice(1))];
+                  if (r) {
+                    const vaKey = sharedEval.v1IsVA ? "v1" : "v2";
+                    const vbKey = sharedEval.v1IsVA ? "v2" : "v1";
+                    tableData = {
+                      vA: Object.fromEntries(CRITERIA.map(c=>[c.key,{score:r.scores[vaKey][c.key].score, text:r.scores[vaKey][c.key].comment||null}])),
+                      vB: Object.fromEntries(CRITERIA.map(c=>[c.key,{score:r.scores[vbKey][c.key].score, text:r.scores[vbKey][c.key].comment||null}])),
+                    };
+                  }
+                }
 
                 return (
                   <div>
-                    {/* Share prompt if not yet shared */}
-                    {!sharedEval && currentEntry && (
-                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-                        background:`rgba(90,171,240,0.06)`,border:`1px solid ${C.bh}`,
-                        borderRadius:7,padding:"9px 13px",marginBottom:14}}>
-                        <span style={{fontSize:12,color:C.muted}}>Share this eval for blind human rating</span>
-                        <button onClick={()=>shareEval(currentEntry)} style={{
-                          padding:"5px 14px",borderRadius:6,border:`1px solid ${C.blue}`,background:"transparent",
-                          color:C.blue,fontSize:11.5,fontWeight:600,cursor:"pointer",fontFamily:"'Sora',sans-serif",
-                        }}>
-                          {shareLoading===currentEntry.id ? "Sharing…" : copiedId===currentEntry.id ? "✓ Link copied" : "Share →"}
-                        </button>
-                      </div>
-                    )}
+                    {/* Share / copy link bar */}
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                      background:`rgba(90,171,240,0.05)`,border:`1px solid ${C.b}`,
+                      borderRadius:7,padding:"9px 14px",marginBottom:16}}>
+                      <span style={{fontSize:13,color:C.muted}}>
+                        {sharedEval ? "Blind rating link" : "Share this eval for blind human rating"}
+                      </span>
+                      <button onClick={()=>shareEval(currentEntry||history.find(e=>e.supabaseId===sharedEval?.supabaseId))} style={{
+                        padding:"5px 14px",borderRadius:6,border:`1px solid ${C.blue}`,background:"transparent",
+                        color:C.blue,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Sora',sans-serif",flexShrink:0,
+                      }}>
+                        {shareLoading ? "Sharing…" : copiedId ? "✓ Link copied" : sharedEval ? "Copy link" : "Share →"}
+                      </button>
+                    </div>
 
-                    {sc.summary&&(
+                    {/* Summary (AI view only) */}
+                    {ratingView==="ai" && sc.summary && (
                       <div style={{background:C.abg,border:"1px solid #00c89633",borderRadius:7,padding:"12px 16px",marginBottom:16,fontSize:14,color:C.text,lineHeight:1.7}}>
                         {sc.summary}
                       </div>
                     )}
 
-                    {/* AI Scores table */}
-                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-                      <span style={{fontSize:11,fontFamily:"monospace",color:C.blue,textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600}}>🤖 AI Evaluation</span>
-                      <span style={{fontSize:11,color:C.dim,fontFamily:"monospace"}}>— generated by the scoring model in Step 4</span>
+                    {/* View selector */}
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+                      <select value={ratingView} onChange={e=>setRatingView(e.target.value)} style={{
+                        padding:"7px 12px",borderRadius:7,border:`1px solid ${C.b}`,background:C.bg,
+                        color:C.text,fontSize:13,fontFamily:"'Sora',sans-serif",cursor:"pointer",
+                      }}>
+                        {ratingOptions.map(o=><option key={o.id} value={o.id}>{o.label}</option>)}
+                      </select>
+                      {sharedEval && (
+                        <button onClick={refreshScoresRatings} style={{
+                          fontSize:12,fontFamily:"monospace",color:C.muted,background:"transparent",
+                          border:`1px solid ${C.b}`,padding:"6px 12px",borderRadius:6,cursor:"pointer",
+                        }}>refresh</button>
+                      )}
+                      {sharedEval && scoresHumanRatings.length === 0 && (
+                        <span style={{fontSize:12,fontFamily:"monospace",color:C.dim}}>No human ratings yet</span>
+                      )}
                     </div>
-                    <ScoreTable sc={sc} totA={totA} totB={totB} />
 
-                    {/* Human ratings section */}
-                    {sharedEval && (
-                      <div style={{marginTop:28,paddingTop:24,borderTop:`2px solid ${C.b}`}}>
-                        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-                          <div style={{display:"flex",alignItems:"center",gap:10}}>
-                            <span style={{fontSize:11,fontFamily:"monospace",color:C.warn,textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600}}>👤 Human Ratings</span>
-                            {scoresHumanRatings.length > 0 && (
-                              <span style={{fontSize:11,fontFamily:"monospace",color:C.warn}}>
-                                — {scoresHumanRatings.length} rater{scoresHumanRatings.length!==1?"s":""}
-                              </span>
-                            )}
-                          </div>
-                          <button onClick={refreshScoresRatings} style={{fontSize:11,fontFamily:"monospace",color:C.muted,background:"transparent",border:`1px solid ${C.b}`,padding:"3px 10px",borderRadius:5,cursor:"pointer"}}>
-                            refresh
-                          </button>
-                        </div>
-
-                        {scoresHumanRatings.length === 0 ? (
-                          <div style={{fontSize:12,fontFamily:"monospace",color:C.dim,padding:"16px 0"}}>
-                            No human ratings yet.
-                            {" "}<span style={{color:C.muted}}>Share link:</span>
-                            {" "}<code style={{fontSize:11,color:C.blue,wordBreak:"break-all"}}>
-                              {window.location.origin}/#rate/{sharedEval.supabaseId}
-                            </code>
-                          </div>
-                        ) : (
-                          <>
-                            {/* Aggregate table */}
-                            <HumanScoreTable avg={humanAvg} />
-
-                            {/* Individual raters */}
-                            <div style={{marginTop:10,display:"flex",flexDirection:"column",gap:5}}>
-                              {scoresHumanRatings.map((r, i) => {
-                                const vaKey = sharedEval.v1IsVA ? "v1" : "v2";
-                                const vbKey = sharedEval.v1IsVA ? "v2" : "v1";
-                                const tA = CRITERIA.reduce((s,c)=>s+(r.scores?.[vaKey]?.[c.key]?.score||0),0);
-                                const tB = CRITERIA.reduce((s,c)=>s+(r.scores?.[vbKey]?.[c.key]?.score||0),0);
-                                return (
-                                  <div key={i} style={{fontSize:11,fontFamily:"monospace",color:C.muted,
-                                    background:C.s2,border:`1px solid ${C.b}`,borderRadius:5,
-                                    padding:"7px 11px",display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
-                                    <span style={{color:C.text,minWidth:80}}>{r.rater_name || `Rater ${i+1}`}</span>
-                                    <span>A: <span style={{color:C.blue}}>{tA}/40</span></span>
-                                    <span>B: <span style={{color:C.accent}}>{tB}/40</span></span>
-                                    <span style={{color:tB>tA?C.accent:tA>tB?C.blue:C.muted,fontSize:10}}>
-                                      {tB>tA?"B preferred":tA>tB?"A preferred":"tie"} · Δ{Math.abs(tB-tA)}
-                                    </span>
-                                    <span style={{marginLeft:"auto",color:C.dim,fontSize:10}}>
-                                      {new Date(r.created_at).toLocaleString()}
-                                    </span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    )}
+                    {/* Unified table */}
+                    {tableData
+                      ? <UnifiedScoreTable data={tableData} />
+                      : <div style={{fontSize:13,color:C.dim,fontFamily:"monospace",padding:"20px 0"}}>No data for selected view.</div>
+                    }
                   </div>
                 );
               })()}
@@ -841,109 +837,70 @@ Return ONLY this JSON:
   );
 }
 
-// ─── Reusable score table (AI) ─────────────────────────────────────────
-function ScoreTable({ sc, totA, totB }) {
+// ─── Unified score table (AI + individual human + human avg) ───────────
+function UnifiedScoreTable({ data }) {
+  const fmt = v => {
+    const n = Number(v);
+    return Number.isInteger(n) ? n : n.toFixed(1);
+  };
+  const totA = CRITERIA.reduce((s,c) => s + Number(data.vA[c.key]?.score||0), 0);
+  const totB = CRITERIA.reduce((s,c) => s + Number(data.vB[c.key]?.score||0), 0);
+  const totDiff = totB - totA;
+
   return (
-    <div style={{borderRadius:8,border:`1px solid ${C.b}`,overflow:"hidden",marginBottom:4}}>
-      <div style={{display:"grid",gridTemplateColumns:"130px 1fr 1fr",background:C.s2,borderBottom:`1px solid ${C.b}`}}>
+    <div style={{borderRadius:8,border:`1px solid ${C.b}`,overflow:"hidden"}}>
+      {/* Header */}
+      <div style={{display:"grid",gridTemplateColumns:"150px 1fr 1fr",background:C.s2,borderBottom:`1px solid ${C.b}`}}>
         <div style={{padding:"11px 14px",borderRight:`1px solid ${C.b}`,fontSize:11,fontFamily:"monospace",color:C.muted,textTransform:"uppercase",letterSpacing:"0.5px"}}>Rubric</div>
         <div style={{padding:"11px 14px",borderRight:`1px solid ${C.b}`,fontSize:12,fontFamily:"monospace",color:C.blue,fontWeight:600}}>VERSION A · Single Model</div>
         <div style={{padding:"11px 14px",fontSize:12,fontFamily:"monospace",color:C.accent,fontWeight:600}}>VERSION B · Reviewed</div>
       </div>
-      {CRITERIA.map(({key,label,color})=>{
-        const a=sc.vA?.[key], b=sc.vB?.[key];
-        if(!a||!b) return null;
-        const diff=b.score-a.score;
-        return(
-          <div key={key} style={{display:"grid",gridTemplateColumns:"130px 1fr 1fr",borderBottom:`1px solid ${C.b}`}}>
-            <div style={{padding:"13px",borderRight:`1px solid ${C.b}`,background:C.s2,display:"flex",flexDirection:"column",gap:5,justifyContent:"center"}}>
+
+      {/* Criterion rows */}
+      {CRITERIA.map(({key,label,color}) => {
+        const a = data.vA[key], b = data.vB[key];
+        if (!a || !b) return null;
+        const diff = Number(b.score) - Number(a.score);
+        const absDiff = Math.abs(diff);
+        return (
+          <div key={key} style={{display:"grid",gridTemplateColumns:"150px 1fr 1fr",borderBottom:`1px solid ${C.b}`}}>
+            <div style={{padding:"13px 14px",borderRight:`1px solid ${C.b}`,background:C.s2,display:"flex",flexDirection:"column",gap:5,justifyContent:"center"}}>
               <div style={{display:"flex",alignItems:"center",gap:6}}>
                 <div style={{width:6,height:6,borderRadius:"50%",background:color,flexShrink:0}}/>
-                <span style={{fontSize:12,fontWeight:600,color:C.text}}>{label}</span>
+                <span style={{fontSize:13,fontWeight:600,color:C.text}}>{label}</span>
               </div>
-              {diff!==0&&<span style={{fontSize:10,fontFamily:"monospace",paddingLeft:12,color:diff>0?C.accent:C.blue}}>
-                {diff>0?`+${diff} → B`:`+${Math.abs(diff)} → A`}
+              {diff!==0 && <span style={{fontSize:10.5,fontFamily:"monospace",paddingLeft:12,color:diff>0?C.accent:C.blue}}>
+                {diff>0?`+${fmt(absDiff)} → B`:`+${fmt(absDiff)} → A`}
               </span>}
             </div>
-            {[{d:a,c:C.blue,br:true},{d:b,c:C.accent,br:false}].map(({d,c,br},i)=>(
-              <div key={i} style={{padding:"13px",borderRight:br?`1px solid ${C.b}`:"none"}}>
-                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-                  <span style={{fontSize:22,fontWeight:700,color:c,fontFamily:"monospace",lineHeight:1}}>{d.score}</span>
+            {[{d:a,c:C.blue,br:true},{d:b,c:C.accent,br:false}].map(({d,c,br},i) => (
+              <div key={i} style={{padding:"13px 14px",borderRight:br?`1px solid ${C.b}`:"none"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:d.text?10:0}}>
+                  <span style={{fontSize:24,fontWeight:700,color:c,fontFamily:"monospace",lineHeight:1}}>{fmt(d.score)}</span>
                   <div style={{flex:1,height:4,background:C.b,borderRadius:2,overflow:"hidden"}}>
-                    <div style={{height:"100%",width:`${d.score*10}%`,background:c,borderRadius:2,transition:"width 1s ease 0.4s"}}/>
+                    <div style={{height:"100%",width:`${Number(d.score)*10}%`,background:c,borderRadius:2,transition:"width 0.4s ease"}}/>
                   </div>
-                  <span style={{fontSize:10,color:C.muted,fontFamily:"monospace"}}>/10</span>
+                  <span style={{fontSize:11,color:C.muted,fontFamily:"monospace"}}>/10</span>
                 </div>
-                {d.feedback&&<div style={{fontSize:13.5,color:C.text,lineHeight:1.75,opacity:0.9}}>{d.feedback}</div>}
+                {d.text && <div style={{fontSize:13.5,color:C.text,lineHeight:1.75,opacity:0.9}}>{d.text}</div>}
               </div>
             ))}
           </div>
         );
       })}
-      <div style={{display:"grid",gridTemplateColumns:"130px 1fr 1fr",background:C.s2}}>
-        <div style={{padding:"12px 14px",borderRight:`1px solid ${C.b}`,fontSize:11,fontFamily:"monospace",color:C.muted,textTransform:"uppercase",letterSpacing:"0.5px",display:"flex",alignItems:"center"}}>Total</div>
-        <div style={{padding:"11px 13px",borderRight:`1px solid ${C.b}`,display:"flex",alignItems:"center",gap:6}}>
-          <span style={{fontSize:22,fontWeight:700,color:C.blue,fontFamily:"monospace"}}>{totA}</span>
-          <span style={{fontSize:10,color:C.muted,fontFamily:"monospace"}}>/40</span>
-        </div>
-        <div style={{padding:"11px 13px",display:"flex",alignItems:"center",gap:6}}>
-          <span style={{fontSize:22,fontWeight:700,color:C.accent,fontFamily:"monospace"}}>{totB}</span>
-          <span style={{fontSize:10,color:C.muted,fontFamily:"monospace"}}>/40</span>
-          <span style={{marginLeft:"auto",fontSize:11,fontFamily:"monospace",color:totB>totA?C.accent:totA>totB?C.blue:C.muted}}>
-            {totB>totA?"B wins":totA>totB?"A wins":"tie"} · Δ{Math.abs(totB-totA)}
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
 
-// ─── Human avg score table ─────────────────────────────────────────────
-function HumanScoreTable({ avg }) {
-  if (!avg) return null;
-  return (
-    <div style={{borderRadius:8,border:`1px solid ${C.b}`,overflow:"hidden"}}>
-      <div style={{display:"grid",gridTemplateColumns:"130px 1fr 1fr",background:C.s2,borderBottom:`1px solid ${C.b}`}}>
-        <div style={{padding:"10px 13px",borderRight:`1px solid ${C.b}`,fontSize:10,fontFamily:"monospace",color:C.dim,textTransform:"uppercase",letterSpacing:"0.5px"}}>Rubric</div>
-        <div style={{padding:"10px 13px",borderRight:`1px solid ${C.b}`,fontSize:10,fontFamily:"monospace",color:C.blue,fontWeight:600}}>VERSION A · avg</div>
-        <div style={{padding:"10px 13px",fontSize:10,fontFamily:"monospace",color:C.accent,fontWeight:600}}>VERSION B · avg</div>
-      </div>
-      {CRITERIA.map(({key,label,color})=>{
-        const a=avg.vA[key], b=avg.vB[key];
-        const diff=Math.round((b-a)*10)/10;
-        return(
-          <div key={key} style={{display:"grid",gridTemplateColumns:"130px 1fr 1fr",borderBottom:`1px solid ${C.b}`}}>
-            <div style={{padding:"11px 13px",borderRight:`1px solid ${C.b}`,background:C.s2,display:"flex",alignItems:"center",gap:6}}>
-              <div style={{width:6,height:6,borderRadius:"50%",background:color}}/>
-              <span style={{fontSize:12,fontWeight:600,color:C.text}}>{label}</span>
-              {diff!==0&&<span style={{fontSize:9,fontFamily:"monospace",marginLeft:4,color:diff>0?C.accent:C.blue}}>
-                {diff>0?`+${diff}→B`:`+${Math.abs(diff)}→A`}
-              </span>}
-            </div>
-            {[{v:a,c:C.blue,br:true},{v:b,c:C.accent,br:false}].map(({v,c,br},i)=>(
-              <div key={i} style={{padding:"11px 13px",borderRight:br?`1px solid ${C.b}`:"none",display:"flex",alignItems:"center",gap:8}}>
-                <span style={{fontSize:19,fontWeight:700,color:c,fontFamily:"monospace"}}>{v.toFixed(1)}</span>
-                <div style={{flex:1,height:4,background:C.b,borderRadius:2,overflow:"hidden"}}>
-                  <div style={{height:"100%",width:`${v*10}%`,background:c,borderRadius:2}}/>
-                </div>
-                <span style={{fontSize:10,color:C.muted,fontFamily:"monospace"}}>/10</span>
-              </div>
-            ))}
-          </div>
-        );
-      })}
-      <div style={{display:"grid",gridTemplateColumns:"130px 1fr 1fr",background:C.s2}}>
-        <div style={{padding:"10px 13px",borderRight:`1px solid ${C.b}`,fontSize:10,fontFamily:"monospace",color:C.dim,textTransform:"uppercase",letterSpacing:"0.5px",display:"flex",alignItems:"center"}}>Avg Total</div>
-        <div style={{padding:"10px 13px",borderRight:`1px solid ${C.b}`,display:"flex",alignItems:"center",gap:6}}>
-          <span style={{fontSize:19,fontWeight:700,color:C.blue,fontFamily:"monospace"}}>{avg.totA.toFixed(1)}</span>
-          <span style={{fontSize:10,color:C.muted,fontFamily:"monospace"}}>/40</span>
+      {/* Total row */}
+      <div style={{display:"grid",gridTemplateColumns:"150px 1fr 1fr",background:C.s2}}>
+        <div style={{padding:"12px 14px",borderRight:`1px solid ${C.b}`,fontSize:11,fontFamily:"monospace",color:C.muted,textTransform:"uppercase",letterSpacing:"0.5px",display:"flex",alignItems:"center"}}>Total</div>
+        <div style={{padding:"12px 14px",borderRight:`1px solid ${C.b}`,display:"flex",alignItems:"center",gap:6}}>
+          <span style={{fontSize:24,fontWeight:700,color:C.blue,fontFamily:"monospace"}}>{fmt(totA)}</span>
+          <span style={{fontSize:11,color:C.muted,fontFamily:"monospace"}}>/40</span>
         </div>
-        <div style={{padding:"10px 13px",display:"flex",alignItems:"center",gap:6}}>
-          <span style={{fontSize:19,fontWeight:700,color:C.accent,fontFamily:"monospace"}}>{avg.totB.toFixed(1)}</span>
-          <span style={{fontSize:10,color:C.muted,fontFamily:"monospace"}}>/40</span>
-          <span style={{marginLeft:"auto",fontSize:11,fontFamily:"monospace",
-            color:avg.totB>avg.totA?C.accent:avg.totA>avg.totB?C.blue:C.muted}}>
-            {avg.totB>avg.totA?"B preferred":avg.totA>avg.totB?"A preferred":"tie"} · Δ{Math.abs(avg.totB-avg.totA).toFixed(1)}
+        <div style={{padding:"12px 14px",display:"flex",alignItems:"center",gap:6}}>
+          <span style={{fontSize:24,fontWeight:700,color:C.accent,fontFamily:"monospace"}}>{fmt(totB)}</span>
+          <span style={{fontSize:11,color:C.muted,fontFamily:"monospace"}}>/40</span>
+          <span style={{marginLeft:"auto",fontSize:12,fontFamily:"monospace",color:totDiff>0?C.accent:totDiff<0?C.blue:C.muted}}>
+            {totDiff>0?"B wins":totDiff<0?"A wins":"tie"} · Δ{fmt(Math.abs(totDiff))}
           </span>
         </div>
       </div>
