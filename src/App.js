@@ -32,14 +32,15 @@ async function callLLM(modelId, system, user, label = "", maxTokens = 600) {
 
   let url, body;
   if (model.provider === "anthropic") {
-    url = "/api/v1/messages";
+    url = "/api/claude";
     body = { model: modelId, max_tokens: maxTokens, system, messages: [{ role:"user", content:user }] };
   } else if (model.provider === "openai") {
-    url = "/openai/v1/chat/completions";
+    url = "/api/openai";
     body = { model: modelId, max_tokens: maxTokens, messages: [{ role:"system", content:system }, { role:"user", content:user }] };
   } else {
-    url = `/gemini/v1beta/models/${modelId}:generateContent`;
+    url = "/api/gemini";
     body = {
+      model: modelId,
       contents: [{ role:"user", parts:[{ text:user }] }],
       systemInstruction: { parts:[{ text:system }] },
       generationConfig: { maxOutputTokens: maxTokens },
