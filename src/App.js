@@ -578,9 +578,7 @@ Return ONLY this JSON:
                       {history.map(entry => {
                         const tA = entry.results.scores ? totalScore(entry.results.scores.vA) : null;
                         const tB = entry.results.scores ? totalScore(entry.results.scores.vB) : null;
-                        const winner = entry.results.scores?.winner;
                         const ratings = entry.supabaseId ? (humanRatings[entry.supabaseId] || []) : [];
-                        const hAvg = ratings.length ? avgHumanScores(ratings, entry.v1IsVA) : null;
 
                         return (
                           <div key={entry.id} className="hist-card" onClick={()=>restoreEval(entry)} style={{
