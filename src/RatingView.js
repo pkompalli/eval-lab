@@ -10,10 +10,10 @@ const CRITERIA = [
 
 const C = {
   bg:"#07090d", surface:"#0d1117", s2:"#111820",
-  b:"#1a2535", bh:"#243650",
+  b:"#1e2d40", bh:"#2a3f58",
   accent:"#00c896",
-  text:"#dce8f5", muted:"#5a7390", dim:"#2d4057",
-  blue:"#5aabf0", red:"#f87171",
+  text:"#e8f2ff", muted:"#7fa8cc", dim:"#3d5470",
+  blue:"#6ab8f7", red:"#fc8585",
 };
 
 function initScores() {
@@ -105,17 +105,17 @@ export default function RatingView({ evalId }) {
 
           {/* Header */}
           <div style={{marginBottom:20}}>
-            <h1 style={{fontSize:17,fontWeight:700,letterSpacing:'-0.3px',marginBottom:7}}>
+            <h1 style={{fontSize:22,fontWeight:700,letterSpacing:'-0.4px',marginBottom:8}}>
               Rate Medical Content
             </h1>
-            <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginBottom:6}}>
-              <span style={{fontSize:13,color:C.text,fontWeight:600}}>{evalData.topic}</span>
+            <div style={{display:'flex',gap:9,flexWrap:'wrap',alignItems:'center',marginBottom:8}}>
+              <span style={{fontSize:15,color:C.text,fontWeight:600}}>{evalData.topic}</span>
               <span style={{color:C.dim}}>·</span>
-              <span style={{fontSize:11,color:C.accent,fontFamily:'monospace'}}>{evalData.exam}</span>
+              <span style={{fontSize:12.5,color:C.accent,fontFamily:'monospace'}}>{evalData.exam}</span>
               <span style={{color:C.dim}}>·</span>
-              <span style={{fontSize:11,color:C.muted,fontFamily:'monospace'}}>{evalData.content_type}</span>
+              <span style={{fontSize:12.5,color:C.muted,fontFamily:'monospace'}}>{evalData.content_type}</span>
             </div>
-            <p style={{fontSize:12,color:C.dim,lineHeight:1.6}}>
+            <p style={{fontSize:13.5,color:C.muted,lineHeight:1.65}}>
               Read both versions carefully, then score each independently using the rubric below.
               You will not know which version was generated how — this is intentional.
             </p>
@@ -128,8 +128,8 @@ export default function RatingView({ evalId }) {
               { label:'VERSION 2', text: evalData.blind.v2_text },
             ].map(({label,text}) => (
               <div key={label}>
-                <div style={{fontSize:10,fontFamily:'monospace',color:C.blue,marginBottom:7,fontWeight:600,letterSpacing:'0.5px'}}>{label}</div>
-                <div style={{background:C.surface,border:`1px solid ${C.b}`,borderRadius:8,padding:14,fontSize:12.5,lineHeight:1.8,color:C.text,whiteSpace:'pre-wrap',maxHeight:320,overflowY:'auto'}}>{text}</div>
+                <div style={{fontSize:12,fontFamily:'monospace',color:C.blue,marginBottom:8,fontWeight:600,letterSpacing:'0.5px'}}>{label}</div>
+                <div style={{background:C.surface,border:`1px solid ${C.b}`,borderRadius:8,padding:16,fontSize:14,lineHeight:1.85,color:C.text,whiteSpace:'pre-wrap',maxHeight:360,overflowY:'auto'}}>{text}</div>
               </div>
             ))}
           </div>
@@ -137,15 +137,15 @@ export default function RatingView({ evalId }) {
           {/* Rating table */}
           <div style={{background:C.surface,border:`1px solid ${C.b}`,borderRadius:10,overflow:'hidden',marginBottom:14}}>
             <div style={{padding:'12px 16px',borderBottom:`1px solid ${C.b}`,background:C.s2}}>
-              <span style={{fontSize:12.5,fontWeight:600,color:C.text}}>Your Ratings</span>
-              <span style={{fontSize:11,color:C.muted,marginLeft:10}}>Score 1–10 · comments optional</span>
+              <span style={{fontSize:14,fontWeight:600,color:C.text}}>Your Ratings</span>
+              <span style={{fontSize:12.5,color:C.muted,marginLeft:10}}>Score 1–10 · comments optional</span>
             </div>
 
             {/* Table header */}
             <div style={{display:'grid',gridTemplateColumns:'140px 1fr 1fr',background:C.s2,borderBottom:`1px solid ${C.b}`}}>
-              <div style={{padding:'9px 13px',borderRight:`1px solid ${C.b}`,fontSize:10,fontFamily:'monospace',color:C.dim,textTransform:'uppercase',letterSpacing:'0.5px'}}>Rubric</div>
-              <div style={{padding:'9px 13px',borderRight:`1px solid ${C.b}`,fontSize:10,fontFamily:'monospace',color:C.blue,fontWeight:600}}>VERSION 1</div>
-              <div style={{padding:'9px 13px',fontSize:10,fontFamily:'monospace',color:C.blue,fontWeight:600}}>VERSION 2</div>
+              <div style={{padding:'11px 14px',borderRight:`1px solid ${C.b}`,fontSize:11,fontFamily:'monospace',color:C.muted,textTransform:'uppercase',letterSpacing:'0.5px'}}>Rubric</div>
+              <div style={{padding:'11px 14px',borderRight:`1px solid ${C.b}`,fontSize:12,fontFamily:'monospace',color:C.blue,fontWeight:600}}>VERSION 1</div>
+              <div style={{padding:'11px 14px',fontSize:12,fontFamily:'monospace',color:C.blue,fontWeight:600}}>VERSION 2</div>
             </div>
 
             {CRITERIA.map(({ key, label, desc, color }) => (
@@ -154,9 +154,9 @@ export default function RatingView({ evalId }) {
                 <div style={{padding:'13px',borderRight:`1px solid ${C.b}`,background:C.s2,display:'flex',flexDirection:'column',gap:4,justifyContent:'center'}}>
                   <div style={{display:'flex',alignItems:'center',gap:6}}>
                     <div style={{width:6,height:6,borderRadius:'50%',background:color,flexShrink:0}}/>
-                    <span style={{fontSize:12,fontWeight:600,color:C.text}}>{label}</span>
+                    <span style={{fontSize:13.5,fontWeight:600,color:C.text}}>{label}</span>
                   </div>
-                  <span style={{fontSize:10,color:C.dim,paddingLeft:12,lineHeight:1.4}}>{desc}</span>
+                  <span style={{fontSize:11.5,color:C.muted,paddingLeft:12,lineHeight:1.4}}>{desc}</span>
                 </div>
                 {/* Score + comment cells */}
                 {['v1','v2'].map((ver, i) => (
@@ -168,9 +168,9 @@ export default function RatingView({ evalId }) {
                         onChange={e => setField(ver, key, 'score', e.target.value)}
                         placeholder="–"
                         style={{
-                          width:50,padding:'5px 6px',borderRadius:6,textAlign:'center',
+                          width:54,padding:'6px 7px',borderRadius:6,textAlign:'center',
                           border:`1px solid ${scores[ver][key].score ? C.bh : C.b}`,
-                          background:C.bg,color:C.text,fontSize:17,fontWeight:700,
+                          background:C.bg,color:C.text,fontSize:19,fontWeight:700,
                           fontFamily:'monospace',
                         }}
                       />

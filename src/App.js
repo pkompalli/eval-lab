@@ -125,10 +125,10 @@ const CRITERIA = [
 
 const C = {
   bg:"#07090d", surface:"#0d1117", s2:"#111820",
-  b:"#1a2535", bh:"#243650",
+  b:"#1e2d40", bh:"#2a3f58",
   accent:"#00c896", abg:"rgba(0,200,150,0.08)",
-  text:"#dce8f5", muted:"#5a7390", dim:"#2d4057",
-  blue:"#5aabf0", warn:"#f0b34a", purple:"#a78bfa", red:"#f87171",
+  text:"#e8f2ff", muted:"#7fa8cc", dim:"#3d5470",
+  blue:"#6ab8f7", warn:"#f5c066", purple:"#b89cfb", red:"#fc8585",
 };
 
 const STEPS = [
@@ -145,12 +145,12 @@ function ModelSelect({ label, value, onChange, disabled }) {
   return (
     <div style={{display:"flex",flexDirection:"column",gap:4}}>
       <div style={{display:"flex",alignItems:"center",gap:5}}>
-        <div style={{width:6,height:6,borderRadius:"50%",background:provColor(value),flexShrink:0}}/>
-        <span style={{fontSize:10,color:C.muted,fontFamily:"monospace",textTransform:"uppercase",letterSpacing:"0.5px"}}>{label}</span>
+        <div style={{width:7,height:7,borderRadius:"50%",background:provColor(value),flexShrink:0}}/>
+        <span style={{fontSize:11,color:C.muted,fontFamily:"monospace",textTransform:"uppercase",letterSpacing:"0.5px"}}>{label}</span>
       </div>
       <select value={value} onChange={e=>onChange(e.target.value)} disabled={disabled} style={{
-        padding:"5px 8px",borderRadius:6,border:`1px solid ${C.b}`,background:C.bg,
-        color:C.text,fontSize:11.5,cursor:disabled?"not-allowed":"pointer",fontFamily:"'Sora',sans-serif",
+        padding:"6px 10px",borderRadius:6,border:`1px solid ${C.b}`,background:C.bg,
+        color:C.text,fontSize:13,cursor:disabled?"not-allowed":"pointer",fontFamily:"'Sora',sans-serif",
       }}>
         <optgroup label="Anthropic">{MODELS.filter(m=>m.provider==="anthropic").map(m=><option key={m.id} value={m.id}>{m.label}</option>)}</optgroup>
         <optgroup label="OpenAI">{MODELS.filter(m=>m.provider==="openai").map(m=><option key={m.id} value={m.id}>{m.label}</option>)}</optgroup>
@@ -472,48 +472,48 @@ Return ONLY this JSON:
       <div style={{minHeight:"100vh",background:C.bg,color:C.text,fontFamily:"'Sora',sans-serif",padding:"24px 16px 60px"}}>
         <div style={{maxWidth:820,margin:"0 auto"}}>
 
-          <div style={{marginBottom:20}}>
-            <h1 style={{fontSize:17,fontWeight:700,letterSpacing:"-0.3px",marginBottom:4}}>
+          <div style={{marginBottom:24}}>
+            <h1 style={{fontSize:22,fontWeight:700,letterSpacing:"-0.5px",marginBottom:6}}>
               <span style={{color:C.blue}}>Single Model</span>
-              <span style={{color:C.muted,margin:"0 8px",fontWeight:400}}>vs</span>
+              <span style={{color:C.dim,margin:"0 10px",fontWeight:400}}>vs</span>
               <span style={{color:C.accent}}>Reviewed Pipeline</span>
             </h1>
-            <p style={{fontSize:12,color:C.muted}}>6 sequential steps · quality · usefulness · absorption · exam-readiness</p>
+            <p style={{fontSize:13.5,color:C.muted}}>6 sequential steps · quality · usefulness · absorption · exam-readiness</p>
           </div>
 
           {/* Input card */}
-          <div style={{background:C.surface,border:`1px solid ${C.b}`,borderRadius:10,padding:15,marginBottom:12}}>
+          <div style={{background:C.surface,border:`1px solid ${C.b}`,borderRadius:10,padding:18,marginBottom:14}}>
             <textarea value={topic} onChange={e=>setTopic(e.target.value)} disabled={running}
               placeholder="Topic — e.g. Rate control in atrial fibrillation, Cushing's syndrome..."
-              rows={2} style={{width:"100%",background:C.bg,border:`1px solid ${C.b}`,borderRadius:7,padding:"9px 12px",color:C.text,fontSize:13,resize:"none",marginBottom:10,lineHeight:1.6}}/>
+              rows={2} style={{width:"100%",background:C.bg,border:`1px solid ${C.b}`,borderRadius:7,padding:"10px 14px",color:C.text,fontSize:14.5,resize:"none",marginBottom:12,lineHeight:1.7}}/>
 
             <div style={{display:"flex",flexWrap:"wrap",gap:7,alignItems:"center",marginBottom:12}}>
               {["Lesson","MCQ"].map(t=>(
                 <button key={t} onClick={()=>setCt(t)} disabled={running} style={{
-                  padding:"5px 12px",borderRadius:6,fontSize:12,fontWeight:600,cursor:"pointer",
+                  padding:"6px 15px",borderRadius:6,fontSize:13,fontWeight:600,cursor:"pointer",
                   border:`1px solid ${ct===t?C.accent:C.b}`,background:ct===t?C.abg:"transparent",color:ct===t?C.accent:C.muted,
                 }}>{t}</button>
               ))}
               <select value={exam} onChange={e=>setExam(e.target.value)} disabled={running} style={{
-                padding:"5px 10px",borderRadius:6,border:`1px solid ${C.b}`,background:C.bg,color:C.text,fontSize:12,cursor:"pointer",
+                padding:"6px 12px",borderRadius:6,border:`1px solid ${C.b}`,background:C.bg,color:C.text,fontSize:13,cursor:"pointer",
               }}>
                 {EXAMS.map(e=><option key={e}>{e}</option>)}
               </select>
               <button onClick={ping} disabled={pinging||running} style={{
-                padding:"5px 12px",borderRadius:6,border:`1px solid ${C.b}`,background:"transparent",
-                color:C.muted,fontSize:11,fontFamily:"monospace",cursor:"pointer",
+                padding:"6px 13px",borderRadius:6,border:`1px solid ${C.b}`,background:"transparent",
+                color:C.muted,fontSize:12,fontFamily:"monospace",cursor:"pointer",
               }}>{pinging?"pinging...":"test API"}</button>
               <button onClick={run} disabled={running||!topic.trim()} style={{
-                marginLeft:"auto",padding:"8px 20px",borderRadius:7,border:"none",
+                marginLeft:"auto",padding:"9px 24px",borderRadius:7,border:"none",
                 background:running||!topic.trim()?C.dim:C.accent,
                 color:running||!topic.trim()?C.muted:"#000",
-                fontSize:12.5,fontWeight:700,cursor:running||!topic.trim()?"not-allowed":"pointer",
+                fontSize:13.5,fontWeight:700,cursor:running||!topic.trim()?"not-allowed":"pointer",
               }}>{running?"Running...":"Run Eval →"}</button>
             </div>
 
-            <div style={{borderTop:`1px solid ${C.b}`,paddingTop:10}}>
-              <div style={{fontSize:9,fontFamily:"monospace",color:C.dim,textTransform:"uppercase",letterSpacing:"1px",marginBottom:8}}>Model Selection</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10}}>
+            <div style={{borderTop:`1px solid ${C.b}`,paddingTop:12}}>
+              <div style={{fontSize:10.5,fontFamily:"monospace",color:C.muted,textTransform:"uppercase",letterSpacing:"1px",marginBottom:10}}>Model Selection</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:12}}>
                 <ModelSelect label="Version A"  value={modelA}    onChange={setModelA}    disabled={running}/>
                 <ModelSelect label="Gen-B"       value={modelGenB} onChange={setModelGenB} disabled={running}/>
                 <ModelSelect label="Validator"   value={modelVal}  onChange={setModelVal}  disabled={running}/>
@@ -536,12 +536,12 @@ Return ONLY this JSON:
             <div style={{display:"flex",gap:2,borderBottom:`1px solid ${C.b}`}}>
               {tabs.map(({id,label,off})=>(
                 <button key={id} onClick={()=>!off&&setTab(id)} style={{
-                  padding:"7px 13px",
+                  padding:"9px 16px",
                   border:`1px solid ${tab===id?C.b:"transparent"}`,
                   borderBottom:tab===id?`1px solid ${C.surface}`:"1px solid transparent",
                   background:tab===id?C.surface:"transparent",
                   color:off?C.dim:tab===id?C.text:C.muted,
-                  fontSize:12,fontWeight:600,cursor:off?"not-allowed":"pointer",
+                  fontSize:13,fontWeight:600,cursor:off?"not-allowed":"pointer",
                   borderRadius:"6px 6px 0 0",fontFamily:"monospace",
                 }}>{label}</button>
               ))}
@@ -553,7 +553,7 @@ Return ONLY this JSON:
               {tab==="history"&&(
                 <div>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-                    <span style={{fontSize:11,fontFamily:"monospace",color:C.muted}}>
+                    <span style={{fontSize:12.5,fontFamily:"monospace",color:C.muted}}>
                       {history.length} eval{history.length!==1?"s":""} · click to restore · Share to get a blind rating link
                     </span>
                     {history.length>0&&(
@@ -590,16 +590,16 @@ Return ONLY this JSON:
                               color:C.muted,cursor:"pointer",fontSize:16,lineHeight:1,padding:"2px 5px",
                             }}>×</button>
 
-                            <div style={{fontSize:13,fontWeight:600,color:C.text,marginBottom:5,paddingRight:24}}>
+                            <div style={{fontSize:15,fontWeight:600,color:C.text,marginBottom:7,paddingRight:24}}>
                               {entry.topic.length>80 ? entry.topic.slice(0,80)+"…" : entry.topic}
                             </div>
 
-                            <div style={{display:"flex",gap:7,alignItems:"center",marginBottom:8,flexWrap:"wrap"}}>
-                              <span style={{fontSize:11,color:C.accent,fontFamily:"monospace"}}>{entry.exam}</span>
-                              <span style={{color:C.dim,fontSize:10}}>·</span>
-                              <span style={{fontSize:11,color:C.muted,fontFamily:"monospace"}}>{entry.contentType}</span>
-                              <span style={{color:C.dim,fontSize:10}}>·</span>
-                              <span style={{fontSize:11,color:C.dim,fontFamily:"monospace"}}>{new Date(entry.timestamp).toLocaleString()}</span>
+                            <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:10,flexWrap:"wrap"}}>
+                              <span style={{fontSize:12,color:C.accent,fontFamily:"monospace"}}>{entry.exam}</span>
+                              <span style={{color:C.dim,fontSize:11}}>·</span>
+                              <span style={{fontSize:12,color:C.muted,fontFamily:"monospace"}}>{entry.contentType}</span>
+                              <span style={{color:C.dim,fontSize:11}}>·</span>
+                              <span style={{fontSize:12,color:C.dim,fontFamily:"monospace"}}>{new Date(entry.timestamp).toLocaleString()}</span>
                             </div>
 
                             <div style={{display:"flex",gap:5,marginBottom:tA!==null?8:0,flexWrap:"wrap"}}>
@@ -609,8 +609,8 @@ Return ONLY this JSON:
                                 {label:"Val",   id:entry.models.validator},
                                 {label:"Adv",   id:entry.models.adversarial},
                               ].map(({label,id})=>(
-                                <div key={label} style={{display:"flex",alignItems:"center",gap:4,background:C.bg,border:`1px solid ${C.b}`,borderRadius:4,padding:"2px 7px",fontSize:10,fontFamily:"monospace"}}>
-                                  <div style={{width:5,height:5,borderRadius:"50%",background:provColor(id)}}/>
+                                <div key={label} style={{display:"flex",alignItems:"center",gap:5,background:C.bg,border:`1px solid ${C.b}`,borderRadius:4,padding:"3px 9px",fontSize:11,fontFamily:"monospace"}}>
+                                  <div style={{width:6,height:6,borderRadius:"50%",background:provColor(id)}}/>
                                   <span style={{color:C.dim}}>{label}:</span>
                                   <span style={{color:C.muted}}>{MODELS.find(m=>m.id===id)?.label||id}</span>
                                 </div>
@@ -619,10 +619,10 @@ Return ONLY this JSON:
 
                             {tA!==null&&(
                               <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:8,flexWrap:"wrap"}}>
-                                <span style={{fontSize:11,fontFamily:"monospace",color:C.dim}}>AI:</span>
-                                <span style={{fontSize:12,fontFamily:"monospace",color:C.blue}}>A {tA}/40</span>
-                                <span style={{fontSize:12,fontFamily:"monospace",color:C.accent}}>B {tB}/40</span>
-                                <span style={{fontSize:11,fontFamily:"monospace",color:winner==="B"?C.accent:winner==="A"?C.blue:C.muted}}>
+                                <span style={{fontSize:12,fontFamily:"monospace",color:C.muted}}>AI:</span>
+                                <span style={{fontSize:13,fontFamily:"monospace",color:C.blue}}>A {tA}/40</span>
+                                <span style={{fontSize:13,fontFamily:"monospace",color:C.accent}}>B {tB}/40</span>
+                                <span style={{fontSize:12,fontFamily:"monospace",color:winner==="B"?C.accent:winner==="A"?C.blue:C.muted}}>
                                   {winner==="B"?"B wins":winner==="A"?"A wins":"tie"} · Δ{Math.abs(tB-tA)}
                                 </span>
                               </div>
@@ -630,7 +630,7 @@ Return ONLY this JSON:
 
                             {/* Human ratings row */}
                             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",paddingTop:8,borderTop:`1px solid ${C.b}`}}>
-                              <div style={{fontSize:11,fontFamily:"monospace",color:C.muted,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                              <div style={{fontSize:12,fontFamily:"monospace",color:C.muted,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
                                 {ratings.length > 0 ? (
                                   <>
                                     <span style={{color:C.warn}}>{ratings.length} human rating{ratings.length!==1?"s":""}</span>
@@ -648,11 +648,11 @@ Return ONLY this JSON:
                                 e.stopPropagation();
                                 await shareEval(entry);
                               }} style={{
-                                padding:"3px 10px",borderRadius:5,flexShrink:0,
+                                padding:"4px 12px",borderRadius:5,flexShrink:0,
                                 border:`1px solid ${copiedId===entry.id?C.accent:C.b}`,
                                 background:"transparent",
                                 color:copiedId===entry.id?C.accent:C.muted,
-                                fontSize:10,fontFamily:"monospace",cursor:"pointer",
+                                fontSize:11.5,fontFamily:"monospace",cursor:"pointer",
                               }}>
                                 {shareLoading===entry.id?"sharing…":copiedId===entry.id?"✓ link copied":entry.supabaseId?"copy link":"share →"}
                               </button>
@@ -678,21 +678,21 @@ Return ONLY this JSON:
                           border:`1px solid ${s!=="pending"?C.bh:C.b}`,transition:"all 0.2s"}}>
                           <div style={{width:8,height:8,borderRadius:"50%",flexShrink:0,
                             background:s==="complete"?C.accent:s==="running"?color:C.dim}}/>
-                          <span style={{fontSize:12.5,color:s==="pending"?C.dim:C.text,fontFamily:"monospace",flex:1}}>{label}</span>
-                          <span style={{fontSize:10,color:provColor(mId),fontFamily:"monospace",opacity:0.75,marginRight:4}}>
+                          <span style={{fontSize:14,color:s==="pending"?C.dim:C.text,fontFamily:"monospace",flex:1}}>{label}</span>
+                          <span style={{fontSize:12,color:provColor(mId),fontFamily:"monospace",opacity:0.85,marginRight:4}}>
                             {MODELS.find(m=>m.id===mId)?.label}
                           </span>
-                          {s==="running"&&<span style={{fontSize:10,color,fontFamily:"monospace",animation:"blink 1.2s infinite"}}>processing</span>}
-                          {s==="complete"&&<span style={{color:C.accent,fontSize:12}}>✓</span>}
+                          {s==="running"&&<span style={{fontSize:11.5,color,fontFamily:"monospace",animation:"blink 1.2s infinite"}}>processing</span>}
+                          {s==="complete"&&<span style={{color:C.accent,fontSize:14}}>✓</span>}
                         </div>
                       );
                     })}
                   </div>
                   <div style={{background:C.bg,border:`1px solid ${C.b}`,borderRadius:7,padding:10,maxHeight:150,overflowY:"auto"}}>
                     {log.length===0
-                      ?<div style={{fontSize:11,fontFamily:"monospace",color:C.dim}}>Waiting...</div>
+                      ?<div style={{fontSize:12.5,fontFamily:"monospace",color:C.dim}}>Waiting...</div>
                       :log.map((l,i)=>(
-                        <div key={i} style={{fontSize:11,fontFamily:"monospace",lineHeight:2,
+                        <div key={i} style={{fontSize:12.5,fontFamily:"monospace",lineHeight:2,
                           color:l.includes("✗")?C.red:l.includes("✓")?C.accent:C.muted}}>{l}</div>
                       ))}
                   </div>
@@ -707,8 +707,8 @@ Return ONLY this JSON:
                     {label:"VERSION B · Reviewed",    color:C.accent,text:R.vB||R.draft},
                   ].map(({label,color,text})=>(
                     <div key={label}>
-                      <div style={{fontSize:10,fontFamily:"monospace",color,marginBottom:7,fontWeight:600}}>{label}</div>
-                      <div style={{background:C.bg,border:`1px solid ${C.b}`,borderRadius:7,padding:13,fontSize:12.5,lineHeight:1.8,color:C.text,whiteSpace:"pre-wrap",maxHeight:400,overflowY:"auto"}}>{text}</div>
+                      <div style={{fontSize:12,fontFamily:"monospace",color,marginBottom:8,fontWeight:600}}>{label}</div>
+                      <div style={{background:C.bg,border:`1px solid ${C.b}`,borderRadius:7,padding:15,fontSize:14,lineHeight:1.85,color:C.text,whiteSpace:"pre-wrap",maxHeight:420,overflowY:"auto"}}>{text}</div>
                     </div>
                   ))}
                 </div>
@@ -725,11 +725,11 @@ Return ONLY this JSON:
                       <div style={{padding:"10px 13px",borderBottom:`1px solid ${C.b}`,display:"flex",gap:8,alignItems:"center"}}>
                         <div style={{width:7,height:7,borderRadius:"50%",background:color}}/>
                         <div>
-                          <div style={{fontSize:12.5,fontWeight:600,color:C.text}}>{label}</div>
-                          <div style={{fontSize:11,color:C.muted}}>{sub}</div>
+                          <div style={{fontSize:14,fontWeight:600,color:C.text}}>{label}</div>
+                          <div style={{fontSize:12.5,color:C.muted}}>{sub}</div>
                         </div>
                       </div>
-                      <div style={{padding:"12px 13px",fontSize:12.5,lineHeight:1.8,color:C.text,whiteSpace:"pre-wrap",maxHeight:240,overflowY:"auto"}}>{text}</div>
+                      <div style={{padding:"14px 16px",fontSize:13.5,lineHeight:1.85,color:C.text,whiteSpace:"pre-wrap",maxHeight:260,overflowY:"auto"}}>{text}</div>
                     </div>
                   ))}
                 </div>
@@ -758,13 +758,13 @@ Return ONLY this JSON:
                     )}
 
                     {sc.summary&&(
-                      <div style={{background:C.abg,border:"1px solid #00c89633",borderRadius:7,padding:"10px 13px",marginBottom:14,fontSize:12.5,color:C.text,lineHeight:1.65}}>
+                      <div style={{background:C.abg,border:"1px solid #00c89633",borderRadius:7,padding:"12px 16px",marginBottom:16,fontSize:14,color:C.text,lineHeight:1.7}}>
                         {sc.summary}
                       </div>
                     )}
 
                     {/* AI Scores table */}
-                    <div style={{fontSize:10,fontFamily:"monospace",color:C.muted,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:6}}>AI Scores</div>
+                    <div style={{fontSize:11,fontFamily:"monospace",color:C.muted,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:8}}>AI Scores</div>
                     <ScoreTable sc={sc} totA={totA} totB={totB} />
 
                     {/* Human ratings section */}
@@ -843,9 +843,9 @@ function ScoreTable({ sc, totA, totB }) {
   return (
     <div style={{borderRadius:8,border:`1px solid ${C.b}`,overflow:"hidden",marginBottom:4}}>
       <div style={{display:"grid",gridTemplateColumns:"130px 1fr 1fr",background:C.s2,borderBottom:`1px solid ${C.b}`}}>
-        <div style={{padding:"10px 13px",borderRight:`1px solid ${C.b}`,fontSize:10,fontFamily:"monospace",color:C.dim,textTransform:"uppercase",letterSpacing:"0.5px"}}>Rubric</div>
-        <div style={{padding:"10px 13px",borderRight:`1px solid ${C.b}`,fontSize:10,fontFamily:"monospace",color:C.blue,fontWeight:600}}>VERSION A · Single Model</div>
-        <div style={{padding:"10px 13px",fontSize:10,fontFamily:"monospace",color:C.accent,fontWeight:600}}>VERSION B · Reviewed</div>
+        <div style={{padding:"11px 14px",borderRight:`1px solid ${C.b}`,fontSize:11,fontFamily:"monospace",color:C.muted,textTransform:"uppercase",letterSpacing:"0.5px"}}>Rubric</div>
+        <div style={{padding:"11px 14px",borderRight:`1px solid ${C.b}`,fontSize:12,fontFamily:"monospace",color:C.blue,fontWeight:600}}>VERSION A · Single Model</div>
+        <div style={{padding:"11px 14px",fontSize:12,fontFamily:"monospace",color:C.accent,fontWeight:600}}>VERSION B · Reviewed</div>
       </div>
       {CRITERIA.map(({key,label,color})=>{
         const a=sc.vA?.[key], b=sc.vB?.[key];
@@ -871,14 +871,14 @@ function ScoreTable({ sc, totA, totB }) {
                   </div>
                   <span style={{fontSize:10,color:C.muted,fontFamily:"monospace"}}>/10</span>
                 </div>
-                {d.feedback&&<div style={{fontSize:12,color:C.text,lineHeight:1.7,opacity:0.85}}>{d.feedback}</div>}
+                {d.feedback&&<div style={{fontSize:13.5,color:C.text,lineHeight:1.75,opacity:0.9}}>{d.feedback}</div>}
               </div>
             ))}
           </div>
         );
       })}
       <div style={{display:"grid",gridTemplateColumns:"130px 1fr 1fr",background:C.s2}}>
-        <div style={{padding:"11px 13px",borderRight:`1px solid ${C.b}`,fontSize:10,fontFamily:"monospace",color:C.dim,textTransform:"uppercase",letterSpacing:"0.5px",display:"flex",alignItems:"center"}}>Total</div>
+        <div style={{padding:"12px 14px",borderRight:`1px solid ${C.b}`,fontSize:11,fontFamily:"monospace",color:C.muted,textTransform:"uppercase",letterSpacing:"0.5px",display:"flex",alignItems:"center"}}>Total</div>
         <div style={{padding:"11px 13px",borderRight:`1px solid ${C.b}`,display:"flex",alignItems:"center",gap:6}}>
           <span style={{fontSize:22,fontWeight:700,color:C.blue,fontFamily:"monospace"}}>{totA}</span>
           <span style={{fontSize:10,color:C.muted,fontFamily:"monospace"}}>/40</span>
