@@ -344,11 +344,12 @@ export default function App() {
     try {
       const selectedEntries = history.filter(e => selectedIds.has(e.id));
       let updatedHistory = [...history];
-      const supabaseIds = [];
 
+      // Ensure all selected evals are uploaded; collect {entry, supabaseId} pairs
+      const pairs = [];
       for (const entry of selectedEntries) {
         if (entry.supabaseId) {
-          supabaseIds.push(entry.supabaseId);
+          pairs.push({ entry, supabaseId: entry.supabaseId });
         } else {
           const v1IsVA = Math.random() > 0.5;
           const { data, error } = await supabase.from("evals").insert({
@@ -368,7 +369,7 @@ export default function App() {
 
           if (error) throw error;
           const supabaseId = data.id;
-          supabaseIds.push(supabaseId);
+          pairs.push({ entry, supabaseId });
           updatedHistory = updatedHistory.map(e => e.id === entry.id ? { ...e, supabaseId, v1IsVA } : e);
         }
       }
@@ -376,7 +377,11 @@ export default function App() {
       localStorage.setItem(HISTORY_KEY, JSON.stringify(updatedHistory));
       setHistory(updatedHistory);
 
-      const url = `${window.location.origin}/#batch/${supabaseIds.join(",")}`;
+      // Randomize: shuffle eval order + flip v1/v2 display independently per eval
+      const shuffled = [...pairs].sort(() => Math.random() - 0.5);
+      const parts = shuffled.map(({ supabaseId }) => `${supabaseId}:${Math.random() > 0.5 ? 1 : 0}`);
+
+      const url = `${window.location.origin}/#batch/${parts.join(",")}`;
       await navigator.clipboard.writeText(url);
       setBatchCopied(true);
       setTimeout(() => setBatchCopied(false), 2500);

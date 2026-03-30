@@ -21,6 +21,12 @@ function initScores() {
 }
 
 export default function BatchRatingView({ evalIds }) {
+  // Parse "uuid:flip" strings — flip=1 means swap v1/v2 display for that eval
+  const parsedIds = evalIds.map(s => {
+    const [id, flip] = s.split(":");
+    return { id, flip: flip === "1" };
+  });
+
   const [evals,      setEvals]      = useState([]);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [allScores,  setAllScores]  = useState({});
@@ -34,10 +40,11 @@ export default function BatchRatingView({ evalIds }) {
   useEffect(() => {
     supabase.from('evals')
       .select('id,topic,content_type,exam,blind')
-      .in('id', evalIds)
+      .in('id', parsedIds.map(p => p.id))
       .then(({ data, error }) => {
         if (error) { setFetchErr(error.message); setLoading(false); return; }
-        const ordered = evalIds.map(id => data.find(e => e.id === id)).filter(Boolean);
+        // preserve URL order (already shuffled by sharer)
+        const ordered = parsedIds.map(({ id }) => data.find(e => e.id === id)).filter(Boolean);
         setEvals(ordered);
         const init = {};
         ordered.forEach(e => { init[e.id] = { v1: initScores(), v2: initScores() }; });
@@ -62,6 +69,7 @@ export default function BatchRatingView({ evalIds }) {
   });
 
   const currentEval    = evals[currentIdx];
+  const currentFlip    = parsedIds.find(p => p.id === currentEval?.id)?.flip || false;
   const isCurrentValid = isEvalValid(currentEval);
   const isAllValid     = evals.length > 0 && evals.every(e => isEvalValid(e));
   const isLast         = currentIdx === evals.length - 1;
@@ -69,20 +77,20 @@ export default function BatchRatingView({ evalIds }) {
   const handleSubmit = async () => {
     setSubmitting(true);
     setSubmitErr(null);
-    const rows = evals.map(e => ({
-      eval_id:    e.id,
-      rater_name: raterName.trim() || null,
-      scores: {
-        v1: Object.fromEntries(CRITERIA.map(c => [c.key, {
-          score:   Number(allScores[e.id].v1[c.key].score),
-          comment: allScores[e.id].v1[c.key].comment,
-        }])),
-        v2: Object.fromEntries(CRITERIA.map(c => [c.key, {
-          score:   Number(allScores[e.id].v2[c.key].score),
-          comment: allScores[e.id].v2[c.key].comment,
-        }])),
-      },
-    }));
+    const rows = evals.map(e => {
+      const flip = parsedIds.find(p => p.id === e.id)?.flip || false;
+      // If flipped, user's "v1" input corresponds to actual v2_text and vice versa — unflip before storing
+      const raw = allScores[e.id];
+      const [dbV1, dbV2] = flip ? [raw.v2, raw.v1] : [raw.v1, raw.v2];
+      return {
+        eval_id:    e.id,
+        rater_name: raterName.trim() || null,
+        scores: {
+          v1: Object.fromEntries(CRITERIA.map(c => [c.key, { score: Number(dbV1[c.key].score), comment: dbV1[c.key].comment }])),
+          v2: Object.fromEntries(CRITERIA.map(c => [c.key, { score: Number(dbV2[c.key].score), comment: dbV2[c.key].comment }])),
+        },
+      };
+    });
     const { error } = await supabase.from('human_ratings').insert(rows);
     if (error) { setSubmitErr(error.message); setSubmitting(false); }
     else setSubmitted(true);
@@ -168,11 +176,11 @@ export default function BatchRatingView({ evalIds }) {
             </p>
           </div>
 
-          {/* Two content panels */}
+          {/* Two content panels — order determined by per-link flip */}
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:20}}>
             {[
-              { label:'VERSION 1', text: currentEval.blind.v1_text },
-              { label:'VERSION 2', text: currentEval.blind.v2_text },
+              { label:'VERSION 1', text: currentFlip ? currentEval.blind.v2_text : currentEval.blind.v1_text },
+              { label:'VERSION 2', text: currentFlip ? currentEval.blind.v1_text : currentEval.blind.v2_text },
             ].map(({label,text}) => (
               <div key={label}>
                 <div style={{fontSize:12,fontFamily:'monospace',color:C.blue,marginBottom:8,fontWeight:600,letterSpacing:'0.5px'}}>{label}</div>
