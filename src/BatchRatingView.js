@@ -2,10 +2,10 @@ import { useState, useEffect } from 'react';
 import supabase from './supabase';
 
 const CRITERIA = [
-  { key:"quality",       label:"Quality",     desc:"Factual accuracy & clinical correctness", color:"#5aabf0" },
-  { key:"usefulness",    label:"Usefulness",  desc:"Practical study value for the exam",       color:"#a78bfa" },
-  { key:"absorption",    label:"Absorption",  desc:"Clarity, structure & memorability",        color:"#f0b34a" },
-  { key:"examReadiness", label:"Exam-Ready",  desc:"Alignment with exam patterns & high-yield",color:"#00c896" },
+  { key:"accuracy",  label:"Accuracy",   desc:"Clinical & factual correctness — no errors, outdated info, or misleading claims",              color:"#5aabf0" },
+  { key:"clarity",   label:"Clarity",    desc:"Teaching effectiveness — structure, explanation quality & logical flow of concepts",            color:"#a78bfa" },
+  { key:"retention", label:"Retention",  desc:"Memorability — hooks, patterns & anchors that aid recall under exam pressure",                  color:"#f0b34a" },
+  { key:"examYield", label:"Exam-Yield", desc:"High-yield focus — prioritises what the target exam actually tests, right depth & format",      color:"#00c896" },
 ];
 
 const C = {
@@ -28,7 +28,8 @@ export default function BatchRatingView({ evalIds }) {
   });
 
   const [evals,      setEvals]      = useState([]);
-  const [currentIdx, setCurrentIdx] = useState(0);
+  const [activeType, setActiveType] = useState(null);
+  const [idxByType,  setIdxByType]  = useState({});
   const [allScores,  setAllScores]  = useState({});
   const [raterName,  setRaterName]  = useState('');
   const [submitted,  setSubmitted]  = useState(false);
@@ -49,6 +50,9 @@ export default function BatchRatingView({ evalIds }) {
         const init = {};
         ordered.forEach(e => { init[e.id] = { v1: initScores(), v2: initScores() }; });
         setAllScores(init);
+        const types = [...new Set(ordered.map(e => e.content_type))];
+        setActiveType(types[0] || null);
+        setIdxByType(Object.fromEntries(types.map(t => [t, 0])));
         setLoading(false);
       });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -68,11 +72,15 @@ export default function BatchRatingView({ evalIds }) {
     return s1 >= 1 && s1 <= 10 && s2 >= 1 && s2 <= 10;
   });
 
-  const currentEval    = evals[currentIdx];
+  const types        = [...new Set(evals.map(e => e.content_type))];
+  const typeEvals    = evals.filter(e => e.content_type === activeType);
+  const currentIdx   = idxByType[activeType] ?? 0;
+  const setCurrentIdx = (fn) => setIdxByType(prev => ({ ...prev, [activeType]: typeof fn === 'function' ? fn(prev[activeType] ?? 0) : fn }));
+  const currentEval    = typeEvals[currentIdx];
   const currentFlip    = parsedIds.find(p => p.id === currentEval?.id)?.flip || false;
   const isCurrentValid = isEvalValid(currentEval);
   const isAllValid     = evals.length > 0 && evals.every(e => isEvalValid(e));
-  const isLast         = currentIdx === evals.length - 1;
+  const isLast         = currentIdx === typeEvals.length - 1;
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -140,9 +148,33 @@ export default function BatchRatingView({ evalIds }) {
               Rate Medical Content
             </h1>
 
+            {/* Type toggle — only shown when batch has both types */}
+            {types.length > 1 && (
+              <div style={{display:'flex',gap:6,marginBottom:12}}>
+                {types.map(t => {
+                  const tEvals   = evals.filter(e => e.content_type === t);
+                  const tRated   = tEvals.filter(e => isEvalValid(e)).length;
+                  const isActive = t === activeType;
+                  return (
+                    <button key={t} onClick={() => setActiveType(t)} style={{
+                      padding:'5px 14px', borderRadius:6, fontSize:12, fontFamily:'monospace',
+                      border:`1px solid ${isActive ? C.accent : C.b}`,
+                      background:isActive ? 'rgba(0,200,150,0.08)' : 'transparent',
+                      color:isActive ? C.accent : C.muted, cursor:'pointer',
+                    }}>
+                      {t === 'MCQ' ? 'MCQs' : 'Lessons'}
+                      <span style={{marginLeft:6,color:tRated===tEvals.length?C.accent:C.dim}}>
+                        {tRated}/{tEvals.length}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             {/* Progress dots */}
             <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:10}}>
-              {evals.map((e, i) => {
+              {typeEvals.map((e, i) => {
                 const isRated   = isEvalValid(e);
                 const isCurrent = i === currentIdx;
                 return (
@@ -159,7 +191,7 @@ export default function BatchRatingView({ evalIds }) {
                 );
               })}
               <span style={{fontSize:12,fontFamily:'monospace',color:C.muted,marginLeft:4}}>
-                Eval {currentIdx + 1} of {evals.length}
+                Eval {currentIdx + 1} of {typeEvals.length}
               </span>
             </div>
 
@@ -286,7 +318,7 @@ export default function BatchRatingView({ evalIds }) {
                   fontSize:13,fontWeight:700,
                   cursor:isAllValid&&!submitting ? 'pointer' : 'not-allowed',
                 }}
-              >{submitting ? 'Submitting...' : `Submit All ${evals.length} Ratings →`}</button>
+              >{submitting ? 'Submitting...' : `Submit All ${evals.length} Rating${evals.length !== 1 ? 's' : ''} →`}</button>
             ) : (
               <button
                 onClick={() => setCurrentIdx(i => Math.min(evals.length - 1, i + 1))}

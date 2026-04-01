@@ -3,54 +3,55 @@ import supabase from "./supabase";
 import RatingView from "./RatingView";
 import BatchRatingView from "./BatchRatingView";
 
-// ─── Model catalogue ───────────────────────────────────────────────────
+// ─── Model catalogue (via OpenRouter) ─────────────────────────────────
 const MODELS = [
-  { id:"claude-sonnet-4-20250514",  label:"Claude Sonnet 4",    provider:"anthropic" },
-  { id:"claude-sonnet-4-6",         label:"Claude Sonnet 4.6",  provider:"anthropic" },
-  { id:"claude-opus-4-6",           label:"Claude Opus 4.6",    provider:"anthropic" },
-  { id:"claude-haiku-4-5-20251001", label:"Claude Haiku 4.5",   provider:"anthropic" },
-  { id:"gpt-4o",                    label:"GPT-4o",             provider:"openai"    },
-  { id:"gpt-4o-mini",               label:"GPT-4o Mini",        provider:"openai"    },
-  { id:"gemini-2.0-flash",          label:"Gemini 2.0 Flash",   provider:"gemini"    },
-  { id:"gemini-1.5-pro",            label:"Gemini 1.5 Pro",     provider:"gemini"    },
-  { id:"gemini-1.5-flash",          label:"Gemini 1.5 Flash",   provider:"gemini"    },
+  { id:"anthropic/claude-sonnet-4-5",   label:"Claude Sonnet 4.5",   provider:"anthropic" },
+  { id:"anthropic/claude-sonnet-4-6",   label:"Claude Sonnet 4.6",   provider:"anthropic" },
+  { id:"anthropic/claude-opus-4-6",     label:"Claude Opus 4.6",     provider:"anthropic" },
+  { id:"anthropic/claude-haiku-4-5",    label:"Claude Haiku 4.5",    provider:"anthropic" },
+  { id:"openai/gpt-5.4",                label:"GPT-5.4",             provider:"openai"    },
+  { id:"openai/gpt-4.1",                label:"GPT-4.1",             provider:"openai"    },
+  { id:"openai/gpt-4.1-mini",           label:"GPT-4.1 Mini",        provider:"openai"    },
+  { id:"openai/gpt-4.1-nano",           label:"GPT-4.1 Nano",        provider:"openai"    },
+  { id:"openai/gpt-4o",                 label:"GPT-4o",              provider:"openai"    },
+  { id:"openai/gpt-4o-mini",            label:"GPT-4o Mini",         provider:"openai"    },
+  { id:"openai/o3",                     label:"o3",                  provider:"openai"    },
+  { id:"openai/o4-mini",                label:"o4 Mini",             provider:"openai"    },
+  { id:"google/gemini-3.1-pro-preview",   label:"Gemini 3.1 Pro",      provider:"google"    },
+  { id:"google/gemini-3.0-flash",       label:"Gemini Flash 3",      provider:"google"    },
+  { id:"google/gemini-3.0-flash-lite",  label:"Gemini Flash 3 Lite", provider:"google"    },
+  { id:"google/gemini-2.5-pro",         label:"Gemini 2.5 Pro",      provider:"google"    },
+  { id:"google/gemini-2.5-flash",       label:"Gemini 2.5 Flash",    provider:"google"    },
+  { id:"google/gemini-2.0-flash-001",   label:"Gemini 2.0 Flash",    provider:"google"    },
+  { id:"google/gemini-2.0-flash-lite",  label:"Gemini 2.0 Flash Lite",provider:"google"   },
 ];
 
-const PROVIDER_COLORS = { anthropic:"#e07b39", openai:"#74aa9c", gemini:"#4285f4" };
+const PROVIDER_COLORS = { anthropic:"#e07b39", openai:"#74aa9c", google:"#4285f4" };
 
 function provColor(modelId) {
   const p = MODELS.find(m => m.id === modelId)?.provider;
   return PROVIDER_COLORS[p] || "#5a7390";
 }
 
-// ─── LLM caller ────────────────────────────────────────────────────────
+// ─── LLM caller (via OpenRouter) ──────────────────────────────────────
 async function callLLM(modelId, system, user, label = "", maxTokens = 600) {
-  const model = MODELS.find(m => m.id === modelId);
-  if (!model) throw new Error(`${label}: unknown model ${modelId}`);
+  if (!MODELS.find(m => m.id === modelId)) throw new Error(`${label}: unknown model ${modelId}`);
 
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 55000);
 
-  let url, body;
-  if (model.provider === "anthropic") {
-    url = "/api/claude";
-    body = { model: modelId, max_tokens: maxTokens, system, messages: [{ role:"user", content:user }] };
-  } else if (model.provider === "openai") {
-    url = "/api/openai";
-    body = { model: modelId, max_tokens: maxTokens, messages: [{ role:"system", content:system }, { role:"user", content:user }] };
-  } else {
-    url = "/api/gemini";
-    body = {
-      model: modelId,
-      contents: [{ role:"user", parts:[{ text:user }] }],
-      systemInstruction: { parts:[{ text:system }] },
-      generationConfig: { maxOutputTokens: maxTokens },
-    };
-  }
+  const body = {
+    model: modelId,
+    max_tokens: maxTokens,
+    messages: [
+      { role: "system", content: system },
+      { role: "user",   content: user   },
+    ],
+  };
 
   let res;
   try {
-    res = await fetch(url, { method:"POST", signal:ctrl.signal, headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) });
+    res = await fetch("/api/openrouter", { method:"POST", signal:ctrl.signal, headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) });
   } catch(e) {
     clearTimeout(t);
     if (e.name === "AbortError") throw new Error(`${label}: timed out`);
@@ -63,20 +64,35 @@ async function callLLM(modelId, system, user, label = "", maxTokens = 600) {
   try { data = JSON.parse(raw); } catch { throw new Error(`${label}: bad JSON (HTTP ${res.status})`); }
   if (!res.ok) throw new Error(`${label}: HTTP ${res.status} — ${data?.error?.message || "unknown"}`);
 
-  if (model.provider === "anthropic") {
-    if (!data.content?.[0]?.text) throw new Error(`${label}: empty response`);
-    return data.content[0].text;
-  }
-  if (model.provider === "openai") {
-    if (!data.choices?.[0]?.message?.content) throw new Error(`${label}: empty response`);
-    return data.choices[0].message.content;
-  }
-  if (!data.candidates?.[0]?.content?.parts?.[0]?.text) throw new Error(`${label}: empty response`);
-  return data.candidates[0].content.parts[0].text;
+  if (!data.choices?.[0]?.message?.content) throw new Error(`${label}: empty response`);
+  return data.choices[0].message.content;
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────
 function cap(s, n = 1400) { return s?.length > n ? s.slice(0, n) + "\n...[trimmed]" : s || ""; }
+
+// Returns true if text ends with proper punctuation (not mid-sentence)
+function looksComplete(text) {
+  if (!text || text.length < 30) return false;
+  return /[.!?)\]"'`]$/.test(text.trimEnd());
+}
+
+// Returns revised if it looks valid, otherwise falls back to original with a warning logged
+function safeRevision(revised, original, label, lg) {
+  if (!revised || revised.length < 30) {
+    lg(`⚠ ${label}: revision empty — keeping original`);
+    return original;
+  }
+  if (!looksComplete(revised)) {
+    lg(`⚠ ${label}: revision appears truncated (ends mid-sentence) — keeping original`);
+    return original;
+  }
+  if (revised.length < original.length * 0.5) {
+    lg(`⚠ ${label}: revision suspiciously short (${revised.length} vs ${original.length} chars) — keeping original`);
+    return original;
+  }
+  return revised;
+}
 
 function totalScore(v) { return CRITERIA.reduce((s, c) => s + (v?.[c.key]?.score || 0), 0); }
 
@@ -118,10 +134,10 @@ function updateInHistory(id, patch) {
 const EXAMS = ["UKMLA","NEET PG","INI-CET","USMLE Step 1","USMLE Step 2CK","FMGE"];
 
 const CRITERIA = [
-  { key:"quality",       label:"Quality",    color:"#5aabf0" },
-  { key:"usefulness",    label:"Usefulness", color:"#a78bfa" },
-  { key:"absorption",    label:"Absorption", color:"#f0b34a" },
-  { key:"examReadiness", label:"Exam-Ready", color:"#00c896" },
+  { key:"accuracy",  label:"Accuracy",   color:"#5aabf0", desc:"Clinical & factual correctness — no errors, outdated info, or misleading claims" },
+  { key:"clarity",   label:"Clarity",    color:"#a78bfa", desc:"Teaching effectiveness — structure, explanation quality & logical flow of concepts" },
+  { key:"retention", label:"Retention",  color:"#f0b34a", desc:"Memorability — hooks, patterns & anchors that aid recall under exam pressure" },
+  { key:"examYield", label:"Exam-Yield", color:"#00c896", desc:"High-yield focus — prioritises what the target exam actually tests, right depth & format" },
 ];
 
 const C = {
@@ -133,12 +149,10 @@ const C = {
 };
 
 const STEPS = [
-  { key:"genA",        label:"Step 1 · Version A generate",   color:C.blue   },
-  { key:"genBDraft",   label:"Step 2 · Version B draft",      color:C.accent },
-  { key:"validate",    label:"Step 3a · Validator",           color:C.warn   },
-  { key:"adversarial", label:"Step 3b · Adversarial review",  color:C.purple },
-  { key:"genBFinal",   label:"Step 3c · Synthesize final B",  color:C.accent },
-  { key:"eval",        label:"Step 4 · Score both versions",  color:C.purple },
+  { key:"genA",        label:"Step 1 · Generate",              color:C.blue   },
+  { key:"validate",    label:"Step 2 · Validator revision",    color:C.warn   },
+  { key:"adversarial", label:"Step 3 · Adversarial revision",  color:C.purple },
+  { key:"eval",        label:"Step 4 · Score both versions",   color:C.purple },
 ];
 
 // ─── ModelSelect ───────────────────────────────────────────────────────
@@ -155,7 +169,7 @@ function ModelSelect({ label, value, onChange, disabled }) {
       }}>
         <optgroup label="Anthropic">{MODELS.filter(m=>m.provider==="anthropic").map(m=><option key={m.id} value={m.id}>{m.label}</option>)}</optgroup>
         <optgroup label="OpenAI">{MODELS.filter(m=>m.provider==="openai").map(m=><option key={m.id} value={m.id}>{m.label}</option>)}</optgroup>
-        <optgroup label="Google">{MODELS.filter(m=>m.provider==="gemini").map(m=><option key={m.id} value={m.id}>{m.label}</option>)}</optgroup>
+        <optgroup label="Google">{MODELS.filter(m=>m.provider==="google").map(m=><option key={m.id} value={m.id}>{m.label}</option>)}</optgroup>
       </select>
     </div>
   );
@@ -188,10 +202,10 @@ export default function App() {
   const [ct, setCt]         = useState("Lesson");
   const [exam, setExam]     = useState("UKMLA");
 
-  const [modelA,    setModelA]    = useState("claude-sonnet-4-20250514");
-  const [modelGenB, setModelGenB] = useState("claude-sonnet-4-20250514");
-  const [modelVal,  setModelVal]  = useState("claude-sonnet-4-20250514");
-  const [modelAdv,  setModelAdv]  = useState("claude-sonnet-4-20250514");
+  const [modelA,    setModelA]    = useState("anthropic/claude-sonnet-4-6");
+  const [modelGenB, setModelGenB] = useState("openai/gpt-5.4");
+  const [modelVal,  setModelVal]  = useState("openai/gpt-5.4");
+  const [modelAdv,  setModelAdv]  = useState("google/gemini-3.1-pro-preview");
 
   const [phase, setPhase]     = useState("idle");
   const [tab, setTab]         = useState("history");
@@ -414,76 +428,99 @@ export default function App() {
       lg("Step 1: Generating Version A...");
       stp("genA","running");
       const vA = await callLLM(modelA, `You are a medical educator creating ${exam} study material.`, prompt, "Gen-A");
-      stp("genA","complete"); res("vA", vA); lg("✓ Version A ready");
+      const draft = vA;
+      stp("genA","complete"); res("vA", vA); res("draft", draft); lg("✓ Version A ready — used as Version B starting point");
 
-      lg("Step 2: Generating Version B draft...");
-      stp("genBDraft","running");
-      const draft = await callLLM(modelGenB, `You are an expert ${exam} medical educator.`, prompt, "Gen-B");
-      stp("genBDraft","complete"); res("draft", draft); lg("✓ Version B draft ready");
-
-      lg("Step 3a: Running validator...");
+      lg("Step 3a: Validator critique...");
       stp("validate","running");
       const valCritique = await callLLM(
         modelVal,
-        `You are a medical accuracy validator for ${exam}. Identify factual errors, flattened distinctions, and outdated guidance.`,
-        `Validate this ${type} for ${exam}:\n\n${cap(draft)}\n\nList up to 3 specific issues, one bullet each. Be concise.`,
-        "Validate"
+        `You are a medical accuracy validator for ${exam}. Identify only genuine factual errors, outdated guidance, or missed clinical distinctions. If the content is already accurate, say so. Be concise — do not invent issues.`,
+        `Validate this ${type} for ${exam}:\n\n${draft}\n\nList only real issues, one bullet each. If nothing is wrong, respond with exactly: "No significant issues found."`,
+        "Validate-Critique", 500
       );
-      stp("validate","complete"); res("valCritique", valCritique); lg("✓ Validator done");
+      lg(`  Critique: ${valCritique.length} chars${looksComplete(valCritique) ? "" : " ⚠ may be truncated"}`);
+      const valHasIssues = !/no significant issues/i.test(valCritique);
+      let valRevised = draft;
+      if (valHasIssues) {
+        const valRaw = await callLLM(
+          modelVal,
+          `You are a medical educator for ${exam}. Apply only the critique points below to the original ${type}. Do not change anything not mentioned in the critique. Write the complete revised ${type} in full — never truncate or use placeholders.`,
+          `Original ${type}:\n${draft}\n\nCritique to apply:\n${valCritique}\n\nWrite the complete revised ${type}:`,
+          "Validate-Revise", 2500
+        );
+        lg(`  Revision: ${valRaw.length} chars${looksComplete(valRaw) ? "" : " ⚠ may be truncated"}`);
+        valRevised = safeRevision(valRaw, draft, "Validator", lg);
+      }
+      stp("validate","complete"); res("valCritique", valCritique); res("valRevised", valRevised);
+      lg(`✓ Validator done${valHasIssues ? ` — revised (${valRevised.length} chars)` : " — no changes needed"}`);
 
-      lg("Step 3b: Running adversarial review...");
+      lg("Step 3b: Adversarial critique...");
       stp("adversarial","running");
       const advCritique = await callLLM(
         modelAdv,
-        `You are an adversarial reviewer for ${exam} medical content. Find gaps, missing exam-tested nuances, and false confidence.`,
-        `Adversarially critique this ${type} for ${exam}:\n\n${cap(draft)}\n\nList up to 3 gaps or issues, one bullet each. Be concise.`,
-        "Adversarial"
+        `You are an adversarial reviewer for ${exam} medical content. Identify only genuine gaps, missing exam-tested nuances, or areas of false confidence. If the content is already strong, say so. Be concise — do not invent issues.`,
+        `Adversarially review this ${type} for ${exam}:\n\n${valRevised}\n\nList only real gaps, one bullet each. If nothing is missing, respond with exactly: "No significant gaps found."`,
+        "Adversarial-Critique", 500
       );
-      stp("adversarial","complete"); res("advCritique", advCritique); lg("✓ Adversarial review done");
-
-      lg("Step 3c: Synthesizing final Version B...");
-      stp("genBFinal","running");
-      const vB = await callLLM(
-        modelGenB,
-        `You are an expert ${exam} medical educator. Revise content based on critiques to produce the best possible study material.`,
-        `Original ${type}:\n${cap(draft,800)}\n\nValidator critique:\n${cap(valCritique,400)}\n\nAdversarial critique:\n${cap(advCritique,400)}\n\nWrite an improved final version addressing all issues. Max 200 words.`,
-        "Synthesis"
-      );
-      stp("genBFinal","complete"); res("vB", vB); lg("✓ Final Version B ready");
+      lg(`  Critique: ${advCritique.length} chars${looksComplete(advCritique) ? "" : " ⚠ may be truncated"}`);
+      const advHasIssues = !/no significant gaps/i.test(advCritique);
+      let vB = valRevised;
+      if (advHasIssues) {
+        const advRaw = await callLLM(
+          modelAdv,
+          `You are a medical educator for ${exam}. Apply only the critique points below to the original ${type}. Do not change anything not mentioned in the critique. Write the complete revised ${type} in full — never truncate or use placeholders.`,
+          `Original ${type}:\n${valRevised}\n\nCritique to apply:\n${advCritique}\n\nWrite the complete revised ${type}:`,
+          "Adversarial-Revise", 2500
+        );
+        lg(`  Revision: ${advRaw.length} chars${looksComplete(advRaw) ? "" : " ⚠ may be truncated"}`);
+        vB = safeRevision(advRaw, valRevised, "Adversarial", lg);
+      }
+      stp("adversarial","complete"); res("advCritique", advCritique); res("vB", vB); lg("✓ Adversarial revision done");
 
       lg("Step 4: Scoring both versions...");
       stp("eval","running");
+      // Blind the scorer: randomly assign vA/vB to v1/v2
+      const scorerFlip = Math.random() > 0.5;
+      const [v1text, v2text] = scorerFlip ? [vB, vA] : [vA, vB];
       const evalRaw = await callLLM(
         modelGenB,
-        `You are a rigorous medical education evaluator. Return ONLY valid JSON — no markdown, no backticks, nothing else.`,
+        `You are a rigorous medical education evaluator. Return ONLY valid JSON — no markdown, no backticks, nothing else. Important evaluation principles: (1) In medical education, providing relevant clinical context in an explanation — such as contraindications, caveats, or decision criteria — is educational value even if not explicitly stated in the stem; do not penalise completeness. (2) Conciseness is only a virtue when nothing important is omitted; a streamlined answer that omits testable nuance is weaker, not stronger. (3) When scoring clarity and retention, credit formatting that genuinely aids learning; do not penalise trivial stylistic differences such as capitalisation vs italics for the same emphasis.`,
         `Score two ${type}s on "${topic}" for ${exam}.
 
-VERSION A:
-${cap(vA,1000)}
+VERSION 1:
+${cap(v1text,1500)}
 
-VERSION B:
-${cap(vB,1000)}
-
-Score each criterion 1-10. Use the full range — be discriminating.
+VERSION 2:
+${cap(v2text,1500)}
 
 Criteria:
-- quality: factual accuracy, clinical correctness, depth of coverage
-- usefulness: practical study value and relevance for ${exam}
-- absorption: clarity, structure, and memorability
-- examReadiness: alignment with ${exam} question patterns and high-yield focus
+- accuracy: clinical and factual correctness — penalise errors, outdated info, or misleading claims
+- clarity: teaching effectiveness — structure, explanation quality, and logical flow of concepts
+- retention: memorability — use of hooks, patterns, and anchors that aid recall under exam pressure
+- examYield: high-yield focus — how well it prioritises what ${exam} actually tests, at the right depth and format
 
-For each score write 2-3 sentences of SPECIFIC feedback:
-- Quote exact phrases or specific content from the text
-- Name the specific fact, concept, or clinical detail that is correct/wrong/missing
-- Compare against what ${exam} actually tests
+Scoring approach — for each criterion follow these steps in order:
+1. Compare the two versions directly: which handles this criterion better, and by how much? (negligible / minor / moderate / significant gap)
+2. Write 2-3 sentences of specific feedback for each version — quote exact phrases, name specific facts or gaps, reference what ${exam} actually tests
+3. Assign scores so that: (a) the score gap between versions matches the quality gap you identified — a significant gap must produce a meaningful score difference, not 7 vs 8; (b) the absolute scores reflect how close each version is to a perfect answer for ${exam} — a version with real gaps should not score 9
 
-Return ONLY this JSON:
-{"vA":{"quality":{"score":6,"feedback":"2-3 specific sentences with quotes."},"usefulness":{"score":6,"feedback":"..."},"absorption":{"score":7,"feedback":"..."},"examReadiness":{"score":6,"feedback":"..."}},"vB":{"quality":{"score":9,"feedback":"..."},"usefulness":{"score":9,"feedback":"..."},"absorption":{"score":8,"feedback":"..."},"examReadiness":{"score":9,"feedback":"..."}},"winner":"B","summary":"2 sentence comparison"}`,
+Return ONLY this JSON — feedback comes before score so your reasoning drives the number:
+{"v1":{"accuracy":{"feedback":"...","score":6},"clarity":{"feedback":"...","score":6},"retention":{"feedback":"...","score":7},"examYield":{"feedback":"...","score":6}},"v2":{"accuracy":{"feedback":"...","score":9},"clarity":{"feedback":"...","score":9},"retention":{"feedback":"...","score":8},"examYield":{"feedback":"...","score":9}},"winner":"1 or 2","summary":"2 sentence comparison"}`,
         "Eval", 2000
       );
-      let scores;
-      try { scores = JSON.parse(evalRaw.replace(/```json\n?|```/g,"").trim()); }
+      let rawScores;
+      try { rawScores = JSON.parse(evalRaw.replace(/```json\n?|```/g,"").trim()); }
       catch { throw new Error(`Score parse failed. Raw: "${evalRaw.slice(0,200)}"`); }
+      // Unblind: map v1/v2 back to vA/vB
+      const scores = {
+        vA: scorerFlip ? rawScores.v2 : rawScores.v1,
+        vB: scorerFlip ? rawScores.v1 : rawScores.v2,
+        winner: rawScores.winner === "1"
+          ? (scorerFlip ? "B" : "A")
+          : (scorerFlip ? "A" : "B"),
+        summary: rawScores.summary,
+      };
       stp("eval","complete"); res("scores", scores); lg("✓ Complete");
 
       const entry = {
@@ -491,7 +528,7 @@ Return ONLY this JSON:
         timestamp: new Date().toISOString(),
         topic, contentType: ct, exam,
         models: { vA: modelA, genB: modelGenB, validator: modelVal, adversarial: modelAdv },
-        results: { vA, vB, valCritique, advCritique, scores },
+        results: { vA, draft, valRevised, vB, valCritique, advCritique, scores },
       };
       saveToHistory(entry);
       setHistory(loadHistory());
@@ -518,8 +555,7 @@ Return ONLY this JSON:
   ];
 
   const stepModels = {
-    genA: modelA, genBDraft: modelGenB, validate: modelVal,
-    adversarial: modelAdv, genBFinal: modelGenB, eval: modelGenB,
+    genA: modelA, validate: modelVal, adversarial: modelAdv, eval: modelGenB,
   };
 
   const running = phase === "running";
@@ -550,7 +586,7 @@ Return ONLY this JSON:
               <span style={{color:C.dim,margin:"0 10px",fontWeight:400}}>vs</span>
               <span style={{color:C.accent}}>Reviewed Pipeline</span>
             </h1>
-            <p style={{fontSize:13.5,color:C.muted}}>6 sequential steps · quality · usefulness · absorption · exam-readiness</p>
+            <p style={{fontSize:13.5,color:C.muted}}>4 sequential steps · accuracy · clarity · retention · exam-yield</p>
           </div>
 
           {/* Input card */}
@@ -586,10 +622,10 @@ Return ONLY this JSON:
             <div style={{borderTop:`1px solid ${C.b}`,paddingTop:12}}>
               <div style={{fontSize:10.5,fontFamily:"monospace",color:C.muted,textTransform:"uppercase",letterSpacing:"1px",marginBottom:10}}>Model Selection</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:12}}>
-                <ModelSelect label="Version A"  value={modelA}    onChange={setModelA}    disabled={running}/>
-                <ModelSelect label="Gen-B"       value={modelGenB} onChange={setModelGenB} disabled={running}/>
+                <ModelSelect label="Generator"   value={modelA}    onChange={setModelA}    disabled={running}/>
                 <ModelSelect label="Validator"   value={modelVal}  onChange={setModelVal}  disabled={running}/>
                 <ModelSelect label="Adversarial" value={modelAdv}  onChange={setModelAdv}  disabled={running}/>
+                <ModelSelect label="Scorer"      value={modelGenB} onChange={setModelGenB} disabled={running}/>
               </div>
             </div>
           </div>
@@ -678,8 +714,17 @@ Return ONLY this JSON:
                       No eval history yet — run an eval to start.
                     </div>
                   ) : (
-                    <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                      {history.map(entry => {
+                    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+                      {["Lesson","MCQ"].map(ct => {
+                        const group = history.filter(e => e.contentType === ct);
+                        if (!group.length) return null;
+                        return (
+                          <div key={ct}>
+                            <div style={{fontSize:11,fontFamily:"monospace",color:C.muted,textTransform:"uppercase",letterSpacing:"1px",marginBottom:8,paddingBottom:6,borderBottom:`1px solid ${C.b}`}}>
+                              {ct === "MCQ" ? "MCQs" : "Lessons"} · {group.length}
+                            </div>
+                            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                      {group.map(entry => {
                         const tA = entry.results.scores ? totalScore(entry.results.scores.vA) : null;
                         const tB = entry.results.scores ? totalScore(entry.results.scores.vB) : null;
                         const ratings = entry.supabaseId ? (humanRatings[entry.supabaseId] || []) : [];
@@ -738,10 +783,10 @@ Return ONLY this JSON:
 
                             <div style={{display:"flex",gap:5,marginBottom:tA!==null?8:0,flexWrap:"wrap"}}>
                               {[
-                                {label:"V-A",  id:entry.models.vA},
-                                {label:"Gen-B", id:entry.models.genB},
-                                {label:"Val",   id:entry.models.validator},
-                                {label:"Adv",   id:entry.models.adversarial},
+                                {label:"Gen",    id:entry.models.vA},
+                                {label:"Val",    id:entry.models.validator},
+                                {label:"Adv",    id:entry.models.adversarial},
+                                {label:"Scorer", id:entry.models.genB},
                               ].map(({label,id})=>(
                                 <div key={label} style={{display:"flex",alignItems:"center",gap:5,background:C.bg,border:`1px solid ${C.b}`,borderRadius:4,padding:"3px 9px",fontSize:11,fontFamily:"monospace"}}>
                                   <div style={{width:6,height:6,borderRadius:"50%",background:provColor(id)}}/>
@@ -782,6 +827,10 @@ Return ONLY this JSON:
                                 </button>
                               </div>
                             )}
+                          </div>
+                        );
+                      })}
+                            </div>
                           </div>
                         );
                       })}
@@ -826,25 +875,15 @@ Return ONLY this JSON:
 
               {/* ── Content ── */}
               {tab==="content"&&R.vA&&(
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-                  {[
-                    {label:"VERSION A · Single Model",color:C.blue, text:R.vA},
-                    {label:"VERSION B · Reviewed",    color:C.accent,text:R.vB||R.draft},
-                  ].map(({label,color,text})=>(
-                    <div key={label}>
-                      <div style={{fontSize:12,fontFamily:"monospace",color,marginBottom:8,fontWeight:600}}>{label}</div>
-                      <div style={{background:C.bg,border:`1px solid ${C.b}`,borderRadius:7,padding:15,fontSize:14,lineHeight:1.85,color:C.text,whiteSpace:"pre-wrap",maxHeight:420,overflowY:"auto"}}>{text}</div>
-                    </div>
-                  ))}
-                </div>
+                <ContentTab vA={R.vA} draft={R.draft} valRevised={R.valRevised} vB={R.vB} />
               )}
 
               {/* ── Critiques ── */}
               {tab==="critiques"&&(
                 <div style={{display:"flex",flexDirection:"column",gap:12}}>
                   {[
-                    {label:"Validator Critique", sub:"Accuracy & guideline issues",color:C.warn,  text:R.valCritique},
-                    {label:"Adversarial Critique",sub:"Gaps & false confidence",   color:C.purple,text:R.advCritique},
+                    {label:"Validator Critique",   sub:"Factual errors & guideline issues → revised",  color:C.warn,   text:R.valCritique},
+                    {label:"Adversarial Critique", sub:"Gaps & false confidence → revised",             color:C.purple, text:R.advCritique},
                   ].filter(x=>x.text).map(({label,sub,color,text})=>(
                     <div key={label} style={{background:C.bg,border:`1px solid ${C.b}`,borderRadius:8}}>
                       <div style={{padding:"10px 13px",borderBottom:`1px solid ${C.b}`,display:"flex",gap:8,alignItems:"center"}}>
@@ -960,6 +999,47 @@ Return ONLY this JSON:
   );
 }
 
+// ─── Content tab: Version A vs Version B evolution ─────────────────────
+function ContentTab({ vA, draft, valRevised, vB }) {
+  const stages = [
+    { key:"valRevised", label:"After Validator",   text:valRevised },
+    { key:"vB",         label:"After Adversarial", text:vB         },
+  ].filter(s => s.text);
+
+  const [activeStage, setActiveStage] = useState(stages[stages.length - 1]?.key);
+  const activeText = stages.find(s => s.key === activeStage)?.text || vB || draft;
+
+  return (
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+      {/* Version A */}
+      <div>
+        <div style={{fontSize:12,fontFamily:"monospace",color:C.blue,marginBottom:8,fontWeight:600}}>VERSION A · Single Model</div>
+        <div style={{background:C.bg,border:`1px solid ${C.b}`,borderRadius:7,padding:15,fontSize:14,lineHeight:1.85,color:C.text,whiteSpace:"pre-wrap",maxHeight:460,overflowY:"auto"}}>{vA}</div>
+      </div>
+
+      {/* Version B with stage toggle */}
+      <div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+          <div style={{fontSize:12,fontFamily:"monospace",color:C.accent,fontWeight:600}}>VERSION B · Reviewed</div>
+          {stages.length > 1 && (
+            <div style={{display:"flex",gap:4}}>
+              {stages.map(s => (
+                <button key={s.key} onClick={() => setActiveStage(s.key)} style={{
+                  fontSize:10.5,fontFamily:"monospace",padding:"3px 9px",borderRadius:4,cursor:"pointer",
+                  border:`1px solid ${activeStage===s.key ? C.accent : C.b}`,
+                  background:activeStage===s.key ? "rgba(0,200,150,0.1)" : "transparent",
+                  color:activeStage===s.key ? C.accent : C.muted,
+                }}>{s.label}</button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div style={{background:C.bg,border:`1px solid ${activeStage==="vB"?C.accent:activeStage==="valRevised"?C.warn:C.b}`,borderRadius:7,padding:15,fontSize:14,lineHeight:1.85,color:C.text,whiteSpace:"pre-wrap",maxHeight:460,overflowY:"auto"}}>{activeText}</div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Unified score table (AI + individual human + human avg) ───────────
 function UnifiedScoreTable({ data }) {
   const fmt = v => {
@@ -980,7 +1060,7 @@ function UnifiedScoreTable({ data }) {
       </div>
 
       {/* Criterion rows */}
-      {CRITERIA.map(({key,label,color}) => {
+      {CRITERIA.map(({key,label,color,desc}) => {
         const a = data.vA[key], b = data.vB[key];
         if (!a || !b) return null;
         const diff = Number(b.score) - Number(a.score);
@@ -992,6 +1072,7 @@ function UnifiedScoreTable({ data }) {
                 <div style={{width:6,height:6,borderRadius:"50%",background:color,flexShrink:0}}/>
                 <span style={{fontSize:13,fontWeight:600,color:C.text}}>{label}</span>
               </div>
+              <span style={{fontSize:11,color:C.muted,lineHeight:1.4,paddingLeft:12}}>{desc}</span>
               {diff!==0 && <span style={{fontSize:10.5,fontFamily:"monospace",paddingLeft:12,color:diff>0?C.accent:C.blue}}>
                 {diff>0?`+${fmt(absDiff)} → B`:`+${fmt(absDiff)} → A`}
               </span>}

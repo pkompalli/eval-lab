@@ -2,10 +2,10 @@ import { useState, useEffect } from 'react';
 import supabase from './supabase';
 
 const CRITERIA = [
-  { key:"quality",       label:"Quality",     desc:"Factual accuracy & clinical correctness", color:"#5aabf0" },
-  { key:"usefulness",    label:"Usefulness",  desc:"Practical study value for the exam",       color:"#a78bfa" },
-  { key:"absorption",    label:"Absorption",  desc:"Clarity, structure & memorability",        color:"#f0b34a" },
-  { key:"examReadiness", label:"Exam-Ready",  desc:"Alignment with exam patterns & high-yield",color:"#00c896" },
+  { key:"accuracy",  label:"Accuracy",   desc:"Clinical & factual correctness — no errors, outdated info, or misleading claims",              color:"#5aabf0" },
+  { key:"clarity",   label:"Clarity",    desc:"Teaching effectiveness — structure, explanation quality & logical flow of concepts",            color:"#a78bfa" },
+  { key:"retention", label:"Retention",  desc:"Memorability — hooks, patterns & anchors that aid recall under exam pressure",                  color:"#f0b34a" },
+  { key:"examYield", label:"Exam-Yield", desc:"High-yield focus — prioritises what the target exam actually tests, right depth & format",      color:"#00c896" },
 ];
 
 const C = {
