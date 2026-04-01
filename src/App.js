@@ -435,12 +435,13 @@ export default function App() {
       stp("validate","running");
       const valCritique = await callLLM(
         modelVal,
-        `You are a medical accuracy validator for ${exam}. Identify only genuine factual errors, outdated guidance, or missed clinical distinctions. If the content is already accurate, say so. Be concise — do not invent issues.`,
+        `You are a medical accuracy validator for ${exam}. Identify only genuine factual errors, outdated guidance, or missed clinical distinctions. If the content is already accurate, say so. Be concise — list at most 4 bullets.`,
         `Validate this ${type} for ${exam}:\n\n${draft}\n\nList only real issues, one bullet each. If nothing is wrong, respond with exactly: "No significant issues found."`,
-        "Validate-Critique", 500
+        "Validate-Critique", 1000
       );
-      lg(`  Critique: ${valCritique.length} chars${looksComplete(valCritique) ? "" : " ⚠ may be truncated"}`);
-      const valHasIssues = !/no significant issues/i.test(valCritique);
+      const valCritiqueOk = looksComplete(valCritique);
+      lg(`  Critique: ${valCritique.length} chars${valCritiqueOk ? "" : " ⚠ truncated — skipping revision"}`);
+      const valHasIssues = valCritiqueOk && !/no significant issues/i.test(valCritique);
       let valRevised = draft;
       if (valHasIssues) {
         const valRaw = await callLLM(
@@ -453,18 +454,19 @@ export default function App() {
         valRevised = safeRevision(valRaw, draft, "Validator", lg);
       }
       stp("validate","complete"); res("valCritique", valCritique); res("valRevised", valRevised);
-      lg(`✓ Validator done${valHasIssues ? ` — revised (${valRevised.length} chars)` : " — no changes needed"}`);
+      lg(`✓ Validator done — ${!valCritiqueOk ? "critique truncated, kept original" : valHasIssues ? `revised (${valRevised.length} chars)` : "no changes needed"}`);
 
       lg("Step 3b: Adversarial critique...");
       stp("adversarial","running");
       const advCritique = await callLLM(
         modelAdv,
-        `You are an adversarial reviewer for ${exam} medical content. Identify only genuine gaps, missing exam-tested nuances, or areas of false confidence. If the content is already strong, say so. Be concise — do not invent issues.`,
+        `You are an adversarial reviewer for ${exam} medical content. Identify only genuine gaps, missing exam-tested nuances, or areas of false confidence. If the content is already strong, say so. Be concise — list at most 4 bullets.`,
         `Adversarially review this ${type} for ${exam}:\n\n${valRevised}\n\nList only real gaps, one bullet each. If nothing is missing, respond with exactly: "No significant gaps found."`,
-        "Adversarial-Critique", 500
+        "Adversarial-Critique", 1000
       );
-      lg(`  Critique: ${advCritique.length} chars${looksComplete(advCritique) ? "" : " ⚠ may be truncated"}`);
-      const advHasIssues = !/no significant gaps/i.test(advCritique);
+      const advCritiqueOk = looksComplete(advCritique);
+      lg(`  Critique: ${advCritique.length} chars${advCritiqueOk ? "" : " ⚠ truncated — skipping revision"}`);
+      const advHasIssues = advCritiqueOk && !/no significant gaps/i.test(advCritique);
       let vB = valRevised;
       if (advHasIssues) {
         const advRaw = await callLLM(
@@ -476,7 +478,8 @@ export default function App() {
         lg(`  Revision: ${advRaw.length} chars${looksComplete(advRaw) ? "" : " ⚠ may be truncated"}`);
         vB = safeRevision(advRaw, valRevised, "Adversarial", lg);
       }
-      stp("adversarial","complete"); res("advCritique", advCritique); res("vB", vB); lg("✓ Adversarial revision done");
+      stp("adversarial","complete"); res("advCritique", advCritique); res("vB", vB);
+      lg(`✓ Adversarial done — ${!advCritiqueOk ? "critique truncated, kept original" : advHasIssues ? `revised (${vB.length} chars)` : "no changes needed"}`);
 
       lg("Step 4: Scoring both versions...");
       stp("eval","running");
