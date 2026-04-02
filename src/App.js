@@ -71,10 +71,14 @@ async function callLLM(modelId, system, user, label = "", maxTokens = 600) {
 // ─── Helpers ───────────────────────────────────────────────────────────
 function cap(s, n = 1400) { return s?.length > n ? s.slice(0, n) + "\n...[trimmed]" : s || ""; }
 
-// Returns true if text ends with proper punctuation (not mid-sentence)
+// Returns false only if text clearly ends mid-sentence (dangling article/conjunction/comma).
+// Medical lists legitimately end with drug names or clinical terms — don't require punctuation.
 function looksComplete(text) {
   if (!text || text.length < 30) return false;
-  return /[.!?)\]"'`]$/.test(text.trimEnd());
+  const t = text.trimEnd();
+  if (/,$/.test(t)) return false; // ends with comma — definitely truncated
+  if (/\b(the|a|an|and|or|but|with|in|of|to|for|is|are|was|were|has|have|that|which|this|on|at|by|from|as|if|when|than)\s*$/.test(t)) return false;
+  return true;
 }
 
 // Returns revised if it looks valid, otherwise falls back to original with a warning logged
@@ -503,14 +507,14 @@ Criteria:
 - retention: memorability — use of hooks, patterns, and anchors that aid recall under exam pressure
 - examYield: high-yield focus — how well it prioritises what ${exam} actually tests, at the right depth and format
 
-Scoring approach — for each criterion follow these steps in order:
-1. Compare the two versions directly: which handles this criterion better, and by how much? (negligible / minor / moderate / significant gap)
-2. Write 2-3 sentences of specific feedback for each version — quote exact phrases, name specific facts or gaps, reference what ${exam} actually tests
-3. Assign scores so that: (a) the score gap between versions matches the quality gap you identified — a significant gap must produce a meaningful score difference, not 7 vs 8; (b) the absolute scores reflect how close each version is to a perfect answer for ${exam} — a version with real gaps should not score 9
+Scoring approach — for each criterion:
+1. Compare versions: which is better and by how much? (negligible / minor / moderate / significant gap)
+2. Write ONE sentence of feedback per version — be specific, name facts or gaps
+3. Score so the gap matches the quality gap; a version with real gaps must not score 9
 
-Return ONLY this JSON — feedback comes before score so your reasoning drives the number:
-{"v1":{"accuracy":{"feedback":"...","score":6},"clarity":{"feedback":"...","score":6},"retention":{"feedback":"...","score":7},"examYield":{"feedback":"...","score":6}},"v2":{"accuracy":{"feedback":"...","score":9},"clarity":{"feedback":"...","score":9},"retention":{"feedback":"...","score":8},"examYield":{"feedback":"...","score":9}},"winner":"1 or 2","summary":"2 sentence comparison"}`,
-        "Eval", 2000
+Keep feedback to ONE sentence each. Return ONLY this JSON:
+{"v1":{"accuracy":{"feedback":"...","score":6},"clarity":{"feedback":"...","score":6},"retention":{"feedback":"...","score":7},"examYield":{"feedback":"...","score":6}},"v2":{"accuracy":{"feedback":"...","score":9},"clarity":{"feedback":"...","score":9},"retention":{"feedback":"...","score":8},"examYield":{"feedback":"...","score":9}},"winner":"1 or 2","summary":"1 sentence comparison"}`,
+        "Eval", 3000
       );
       let rawScores;
       try { rawScores = JSON.parse(evalRaw.replace(/```json\n?|```/g,"").trim()); }
