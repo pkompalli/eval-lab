@@ -84,17 +84,19 @@ function looksComplete(text) {
 // Returns revised if it looks valid, otherwise falls back to original with a warning logged
 function safeRevision(revised, original, label, lg) {
   if (!revised || revised.length < 30) {
-    lg(`⚠ ${label}: revision empty — keeping original`);
+    lg(`⚠ ${label}: revision empty (${revised?.length ?? 0} chars) — keeping original`);
     return original;
   }
   if (!looksComplete(revised)) {
-    lg(`⚠ ${label}: revision appears truncated (ends mid-sentence) — keeping original`);
+    const tail = revised.trimEnd().slice(-40);
+    lg(`⚠ ${label}: revision ends mid-sentence ("...${tail}") — keeping original`);
     return original;
   }
-  if (revised.length < original.length * 0.5) {
-    lg(`⚠ ${label}: revision suspiciously short (${revised.length} vs ${original.length} chars) — keeping original`);
+  if (revised.length < original.length * 0.35) {
+    lg(`⚠ ${label}: revision too short (${revised.length} vs ${original.length} chars, <35%) — keeping original`);
     return original;
   }
+  lg(`  ✓ ${label}: revision accepted (${revised.length} chars)`);
   return revised;
 }
 
