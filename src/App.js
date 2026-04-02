@@ -435,8 +435,8 @@ export default function App() {
       stp("validate","running");
       const valCritique = await callLLM(
         modelVal,
-        `You are a medical accuracy validator for ${exam}. Identify only genuine factual errors, outdated guidance, or missed clinical distinctions. If the content is already accurate, say so. Be concise — list at most 4 bullets.`,
-        `Validate this ${type} for ${exam}:\n\n${draft}\n\nList only real issues, one bullet each. If nothing is wrong, respond with exactly: "No significant issues found."`,
+        `You are a medical accuracy validator for ${exam}. Your response must be SHORT: either the exact phrase "No significant issues found." OR a bullet list of at most 3 items, one sentence each. No preamble, no explanations, no headers.`,
+        `Validate this ${type} for ${exam}:\n\n${draft}\n\nIf everything is accurate, respond with exactly: "No significant issues found."\nIf there are errors, list them as bullets — maximum 3, one sentence each.`,
         "Validate-Critique", 1000
       );
       const valCritiqueOk = looksComplete(valCritique);
@@ -460,9 +460,9 @@ export default function App() {
       stp("adversarial","running");
       const advCritique = await callLLM(
         modelAdv,
-        `You are an adversarial reviewer for ${exam} medical content. Identify only genuine gaps, missing exam-tested nuances, or areas of false confidence. If the content is already strong, say so. Be concise — list at most 4 bullets.`,
-        `Adversarially review this ${type} for ${exam}:\n\n${valRevised}\n\nList only real gaps, one bullet each. If nothing is missing, respond with exactly: "No significant gaps found."`,
-        "Adversarial-Critique", 1000
+        `You are an adversarial reviewer for ${exam} medical content. Your response must be SHORT: either the exact phrase "No significant gaps found." OR a bullet list of at most 3 items, one sentence each. No preamble, no explanations, no headers.`,
+        `Adversarially review this ${type} for ${exam}:\n\n${valRevised}\n\nIf nothing is missing, respond with exactly: "No significant gaps found."\nIf there are gaps, list them as bullets — maximum 3, one sentence each.`,
+        "Adversarial-Critique", 1500
       );
       const advCritiqueOk = looksComplete(advCritique);
       lg(`  Critique: ${advCritique.length} chars${advCritiqueOk ? "" : " ⚠ truncated — skipping revision"}`);
