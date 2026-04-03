@@ -69,7 +69,7 @@ async function callLLM(modelId, system, user, label = "", maxTokens = 600) {
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────
-function cap(s, n = 1400) { return s?.length > n ? s.slice(0, n) + "\n...[trimmed]" : s || ""; }
+function cap(s, n = 3000) { return s?.length > n ? s.slice(0, n) + "\n...[trimmed]" : s || ""; }
 
 
 
@@ -481,10 +481,10 @@ Evaluation principles:
         `Score two ${type}s on "${topic}" for ${exam}.
 
 VERSION 1:
-${cap(v1text,1500)}
+${cap(v1text,3000)}
 
 VERSION 2:
-${cap(v2text,1500)}
+${cap(v2text,3000)}
 
 Criteria:
 - accuracy: factual correctness — errors, outdated info, misleading claims
