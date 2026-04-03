@@ -426,66 +426,72 @@ export default function App() {
     setSharedEval(null); setCurrentEntryId(null); setRatingView("ai"); setTab("pipeline");
 
     const type = ct.toLowerCase();
-    const prompt = ct==="Lesson"
-      ? `Write an exam-ready lesson on "${topic}" for ${exam}. Key concepts, clinical pearls, nuances. Max 200 words.`
-      : `Write a single-best-answer MCQ on "${topic}" for ${exam}. Clinical stem, 5 options, correct answer, brief explanation. Max 200 words.`;
+    const genPrompt = ct==="Lesson"
+      ? `Write an exam-ready lesson on "${topic}" for ${exam}.\nStructure: (1) core concept / mechanism, (2) key clinical features or decision points, (3) management or approach, (4) high-yield distinctions and pitfalls.\nTarget length: 200–250 words. No padding.`
+      : `Write a single-best-answer MCQ on "${topic}" for ${exam}.\nInclude: a clinical stem (3–4 sentences, realistic scenario), 5 answer choices (one correct, four plausible distractors), the correct answer, and a 3–4 sentence explanation covering why the answer is correct and why each distractor is wrong.\nTarget length: 250–300 words.`;
+
+    // Helper: parse CRITIQUE / REVISED sections from a single review call
+    function parseReview(raw, original) {
+      const marker = /^REVISED:\s*/im;
+      const match = marker.exec(raw);
+      if (!match) return { critique: raw.trim(), revised: original };
+      const critique = raw.slice(0, match.index).replace(/^CRITIQUE:\s*/i, "").trim();
+      const revised  = raw.slice(match.index + match[0].length).trim();
+      return { critique, revised: revised || original };
+    }
 
     try {
       lg("Step 1: Generating Version A...");
       stp("genA","running");
-      const vA = await callLLM(modelA, `You are a medical educator creating ${exam} study material.`, prompt, "Gen-A");
-      const draft = vA;
-      stp("genA","complete"); res("vA", vA); res("draft", draft); lg("✓ Version A ready — used as Version B starting point");
+      const vA = await callLLM(
+        modelA,
+        `You are a medical educator creating ${exam} study material. Write clearly, accurately, and at the right depth for the exam level.`,
+        genPrompt, "Gen-A", 2000
+      );
+      stp("genA","complete"); res("vA", vA); res("draft", vA);
+      lg(`✓ Version A ready (${vA.length} chars)`);
 
-      lg("Step 3a: Validator critique...");
+      lg("Step 2: Validator review...");
       stp("validate","running");
-      const valCritique = await callLLM(
+      const valRaw = await callLLM(
         modelVal,
-        `You are a medical accuracy validator for ${exam}. Your response must be SHORT: either the exact phrase "No significant issues found." OR a bullet list of at most 3 items, one sentence each. No preamble, no explanations, no headers.`,
-        `Validate this ${type} for ${exam}:\n\n${draft}\n\nIf everything is accurate, respond with exactly: "No significant issues found."\nIf there are errors, list them as bullets — maximum 3, one sentence each.`,
-        "Validate-Critique", 1000
+        `You are a medical accuracy reviewer for ${exam}.
+Your job is not to improve the content — it is to find genuine errors.
+Only flag an issue if you are confident it is factually wrong, clinically outdated, or actively misleading in a way that could cause a student to answer a question incorrectly.
+Style preferences, formatting choices, and minor completeness are not issues.
+Rules for revision:
+- Make the minimum edit needed to fix each flagged issue
+- Do not change any sentence, phrase, or structure not directly related to the critique
+- The result should feel like the same document with targeted corrections, not a rewrite
+- If a critique point is ambiguous or the fix would risk making the content worse, leave that part unchanged`,
+        `Review this ${type} for ${exam}:\n\n${vA}\n\nRespond in exactly this format:\nCRITIQUE: <list genuine factual errors one per line, or "Accurate." if none>\nREVISED:\n<the corrected ${type}, or the original unchanged if no corrections needed>`,
+        "Validate", 3000
       );
-      const valCritiqueOk = looksComplete(valCritique);
-      lg(`  Critique: ${valCritique.length} chars${valCritiqueOk ? "" : " ⚠ truncated — skipping revision"}`);
-      const valHasIssues = valCritiqueOk && !/no significant issues/i.test(valCritique);
-      let valRevised = draft;
-      if (valHasIssues) {
-        const valRaw = await callLLM(
-          modelVal,
-          `You are a medical educator for ${exam}. Apply only the critique points below to the original ${type}. Do not change anything not mentioned in the critique. Write the complete revised ${type} in full — never truncate or use placeholders.`,
-          `Original ${type}:\n${draft}\n\nCritique to apply:\n${valCritique}\n\nWrite the complete revised ${type}:`,
-          "Validate-Revise", 2500
-        );
-        lg(`  Revision: ${valRaw.length} chars${looksComplete(valRaw) ? "" : " ⚠ may be truncated"}`);
-        valRevised = safeRevision(valRaw, draft, "Validator", lg);
-      }
+      const { critique: valCritique, revised: valRevised } = parseReview(valRaw, vA);
+      const valChanged = valRevised.trim() !== vA.trim();
       stp("validate","complete"); res("valCritique", valCritique); res("valRevised", valRevised);
-      lg(`✓ Validator done — ${!valCritiqueOk ? "critique truncated, kept original" : valHasIssues ? `revised (${valRevised.length} chars)` : "no changes needed"}`);
+      lg(`✓ Validator done — ${valChanged ? `revised (${valRevised.length} chars)` : "no changes"}`);
 
-      lg("Step 3b: Adversarial critique...");
+      lg("Step 3: Adversarial review...");
       stp("adversarial","running");
-      const advCritique = await callLLM(
+      const advRaw = await callLLM(
         modelAdv,
-        `You are an adversarial reviewer for ${exam} medical content. Your response must be SHORT: either the exact phrase "No significant gaps found." OR a bullet list of at most 3 items, one sentence each. No preamble, no explanations, no headers.`,
-        `Adversarially review this ${type} for ${exam}:\n\n${valRevised}\n\nIf nothing is missing, respond with exactly: "No significant gaps found."\nIf there are gaps, list them as bullets — maximum 3, one sentence each.`,
-        "Adversarial-Critique", 1500
+        `You are an adversarial reviewer for ${exam} medical content.
+Your job is to find gaps that would cause a student to answer a question incorrectly — not to make the content more comprehensive.
+Only flag a gap if: (a) it is directly tested on ${exam}, AND (b) its absence could lead to a wrong answer. Do not flag nice-to-haves, minor omissions, or anything a student could reasonably infer.
+Rules for revision:
+- Add or adjust only what the critique identifies as a critical gap
+- Do not restructure, reformat, or rewrite sections unrelated to the gap
+- Integrate additions naturally into the existing flow — do not append a list at the end
+- The result should feel like the same document with targeted additions, not a rewrite
+- If integrating a gap would disrupt clarity more than it helps, leave that part unchanged`,
+        `Review this ${type} for ${exam}:\n\n${valRevised}\n\nRespond in exactly this format:\nCRITIQUE: <list critical gaps one per line, or "Complete." if none>\nREVISED:\n<the strengthened ${type}, or the original unchanged if no additions needed>`,
+        "Adversarial", 3000
       );
-      const advCritiqueOk = looksComplete(advCritique);
-      lg(`  Critique: ${advCritique.length} chars${advCritiqueOk ? "" : " ⚠ truncated — skipping revision"}`);
-      const advHasIssues = advCritiqueOk && !/no significant gaps/i.test(advCritique);
-      let vB = valRevised;
-      if (advHasIssues) {
-        const advRaw = await callLLM(
-          modelAdv,
-          `You are a medical educator for ${exam}. Apply only the critique points below to the original ${type}. Do not change anything not mentioned in the critique. Write the complete revised ${type} in full — never truncate or use placeholders.`,
-          `Original ${type}:\n${valRevised}\n\nCritique to apply:\n${advCritique}\n\nWrite the complete revised ${type}:`,
-          "Adversarial-Revise", 2500
-        );
-        lg(`  Revision: ${advRaw.length} chars${looksComplete(advRaw) ? "" : " ⚠ may be truncated"}`);
-        vB = safeRevision(advRaw, valRevised, "Adversarial", lg);
-      }
+      const { critique: advCritique, revised: vB } = parseReview(advRaw, valRevised);
+      const advChanged = vB.trim() !== valRevised.trim();
       stp("adversarial","complete"); res("advCritique", advCritique); res("vB", vB);
-      lg(`✓ Adversarial done — ${!advCritiqueOk ? "critique truncated, kept original" : advHasIssues ? `revised (${vB.length} chars)` : "no changes needed"}`);
+      lg(`✓ Adversarial done — ${advChanged ? `revised (${vB.length} chars)` : "no changes"}`);
 
       lg("Step 4: Scoring both versions...");
       stp("eval","running");
@@ -494,7 +500,11 @@ export default function App() {
       const [v1text, v2text] = scorerFlip ? [vB, vA] : [vA, vB];
       const evalRaw = await callLLM(
         modelGenB,
-        `You are a rigorous medical education evaluator. Return ONLY valid JSON — no markdown, no backticks, nothing else. Important evaluation principles: (1) In medical education, providing relevant clinical context in an explanation — such as contraindications, caveats, or decision criteria — is educational value even if not explicitly stated in the stem; do not penalise completeness. (2) Conciseness is only a virtue when nothing important is omitted; a streamlined answer that omits testable nuance is weaker, not stronger. (3) When scoring clarity and retention, credit formatting that genuinely aids learning; do not penalise trivial stylistic differences such as capitalisation vs italics for the same emphasis.`,
+        `You are a rigorous medical education evaluator. Return ONLY valid JSON — no markdown, no backticks, nothing else.
+Evaluation principles:
+- Relevant clinical context (contraindications, caveats, decision criteria) is educational value — do not penalise completeness
+- Conciseness is only a virtue when nothing important is omitted
+- Do not penalise formatting differences (bullets vs prose, caps vs italics) unless one genuinely aids learning more than the other`,
         `Score two ${type}s on "${topic}" for ${exam}.
 
 VERSION 1:
@@ -504,18 +514,18 @@ VERSION 2:
 ${cap(v2text,1500)}
 
 Criteria:
-- accuracy: clinical and factual correctness — penalise errors, outdated info, or misleading claims
-- clarity: teaching effectiveness — structure, explanation quality, and logical flow of concepts
-- retention: memorability — use of hooks, patterns, and anchors that aid recall under exam pressure
-- examYield: high-yield focus — how well it prioritises what ${exam} actually tests, at the right depth and format
+- accuracy: factual correctness — errors, outdated info, misleading claims
+- clarity: teaching effectiveness — structure, explanation quality, logical flow
+- retention: memorability — hooks, patterns, anchors for recall under exam pressure
+- examYield: right content for what ${exam} actually tests, at the right depth
 
-Scoring approach — for each criterion:
-1. Compare versions: which is better and by how much? (negligible / minor / moderate / significant gap)
-2. Write ONE sentence of feedback per version — be specific, name facts or gaps
-3. Score so the gap matches the quality gap; a version with real gaps must not score 9
+For each criterion:
+1. Compare versions directly — which is better and by how much? (negligible / minor / moderate / significant)
+2. Write 1–2 sentences of specific feedback per version — name exact facts, gaps, or phrases
+3. Score so the gap matches the quality gap; a version with real issues must not score 9+
 
-Keep feedback to ONE sentence each. Return ONLY this JSON:
-{"v1":{"accuracy":{"feedback":"...","score":6},"clarity":{"feedback":"...","score":6},"retention":{"feedback":"...","score":7},"examYield":{"feedback":"...","score":6}},"v2":{"accuracy":{"feedback":"...","score":9},"clarity":{"feedback":"...","score":9},"retention":{"feedback":"...","score":8},"examYield":{"feedback":"...","score":9}},"winner":"1 or 2","summary":"1 sentence comparison"}`,
+Return ONLY this JSON:
+{"v1":{"accuracy":{"feedback":"...","score":6},"clarity":{"feedback":"...","score":6},"retention":{"feedback":"...","score":7},"examYield":{"feedback":"...","score":6}},"v2":{"accuracy":{"feedback":"...","score":9},"clarity":{"feedback":"...","score":9},"retention":{"feedback":"...","score":8},"examYield":{"feedback":"...","score":9}},"winner":"1 or 2","summary":"one sentence"}`,
         "Eval", 3000
       );
       let rawScores;
@@ -537,7 +547,7 @@ Keep feedback to ONE sentence each. Return ONLY this JSON:
         timestamp: new Date().toISOString(),
         topic, contentType: ct, exam,
         models: { vA: modelA, genB: modelGenB, validator: modelVal, adversarial: modelAdv },
-        results: { vA, draft, valRevised, vB, valCritique, advCritique, scores },
+        results: { vA, valRevised, vB, valCritique, advCritique, scores },
       };
       saveToHistory(entry);
       setHistory(loadHistory());
@@ -891,8 +901,8 @@ Keep feedback to ONE sentence each. Return ONLY this JSON:
               {tab==="critiques"&&(
                 <div style={{display:"flex",flexDirection:"column",gap:12}}>
                   {[
-                    {label:"Validator Critique",   sub:"Factual errors & guideline issues → revised",  color:C.warn,   text:R.valCritique},
-                    {label:"Adversarial Critique", sub:"Gaps & false confidence → revised",             color:C.purple, text:R.advCritique},
+                    {label:"Validator Critique",   sub: R.valRevised && R.valRevised !== R.vA ? "Factual errors found → revised" : "No factual errors found",  color:C.warn,   text:R.valCritique},
+                    {label:"Adversarial Critique", sub: R.vB && R.vB !== R.valRevised ? "Gaps found → revised" : "No critical gaps found",                           color:C.purple, text:R.advCritique},
                   ].filter(x=>x.text).map(({label,sub,color,text})=>(
                     <div key={label} style={{background:C.bg,border:`1px solid ${C.b}`,borderRadius:8}}>
                       <div style={{padding:"10px 13px",borderBottom:`1px solid ${C.b}`,display:"flex",gap:8,alignItems:"center"}}>
