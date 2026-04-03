@@ -181,7 +181,7 @@ export default function App() {
   const [exam, setExam]     = useState("UKMLA");
 
   const [modelA,    setModelA]    = useState("openai/gpt-5.4");
-  const [modelGenB, setModelGenB] = useState("openai/gpt-4.1-mini");
+  const [modelGenB, setModelGenB] = useState("google/gemini-3.1-pro-preview");
   const [modelVal,  setModelVal]  = useState("anthropic/claude-sonnet-4-6");
   const [modelAdv,  setModelAdv]  = useState("anthropic/claude-sonnet-4-6");
 
