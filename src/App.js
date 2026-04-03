@@ -71,15 +71,6 @@ async function callLLM(modelId, system, user, label = "", maxTokens = 600) {
 // ─── Helpers ───────────────────────────────────────────────────────────
 function cap(s, n = 1400) { return s?.length > n ? s.slice(0, n) + "\n...[trimmed]" : s || ""; }
 
-// Returns false only if text clearly ends mid-sentence (dangling article/conjunction/comma).
-// Medical lists legitimately end with drug names or clinical terms — don't require punctuation.
-function looksComplete(text) {
-  if (!text || text.length < 30) return false;
-  const t = text.trimEnd();
-  if (/,$/.test(t)) return false; // ends with comma — definitely truncated
-  if (/\b(the|a|an|and|or|but|with|in|of|to|for|is|are|was|were|has|have|that|which|this|on|at|by|from|as|if|when|than)\s*$/.test(t)) return false;
-  return true;
-}
 
 
 function totalScore(v) { return CRITERIA.reduce((s, c) => s + (v?.[c.key]?.score || 0), 0); }
