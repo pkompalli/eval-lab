@@ -467,6 +467,30 @@ Rules for revision:
 
       lg("Step 4: Scoring both versions...");
       lg(`  vA: ${vA.length} chars | vB: ${vB.length} chars`);
+
+      // If pipeline made no changes, versions are identical — scoring would be noise
+      if (vB.trim() === vA.trim()) {
+        stp("eval","complete");
+        const noChangeScores = {
+          vA: null, vB: null, winner: null,
+          summary: "Reviewer pipeline found no issues — both versions are identical. No meaningful score difference possible.",
+        };
+        res("scores", noChangeScores);
+        lg("⚠ Versions identical — skipping scorer (both reviewers found nothing to change)");
+        const entry = {
+          id: Date.now(),
+          timestamp: new Date().toISOString(),
+          topic, contentType: ct, exam,
+          models: { vA: modelA, genB: modelGenB, validator: modelVal, adversarial: modelAdv },
+          results: { vA, valRevised, vB, valCritique, advCritique, scores: noChangeScores },
+        };
+        saveToHistory(entry);
+        setHistory(loadHistory());
+        setCurrentEntryId(entry.id);
+        setPhase("done"); setTab("scores");
+        return;
+      }
+
       stp("eval","running");
       // Blind the scorer: randomly assign vA/vB to v1/v2
       const scorerFlip = Math.random() > 0.5;
@@ -535,16 +559,17 @@ Return ONLY this JSON:
   }, [topic, ct, exam, phase, modelA, modelGenB, modelVal, modelAdv]);
 
   // ── Derived values ────────────────────────────────────────────────
-  const sc   = R.scores;
-  const totA = sc ? totalScore(sc.vA) : 0;
-  const totB = sc ? totalScore(sc.vB) : 0;
+  const sc      = R.scores;
+  const scValid = sc && sc.vA && sc.vB;
+  const totA = scValid ? totalScore(sc.vA) : 0;
+  const totB = scValid ? totalScore(sc.vB) : 0;
 
   const tabs = [
     { id:"history",   label:`History${history.length ? ` (${history.length})` : ""}` },
     { id:"pipeline",  label:"Pipeline",  off: phase==="idle" },
     { id:"content",   label:"Content",   off: !R.vA },
     { id:"critiques", label:"Critiques", off: !R.valCritique },
-    { id:"scores",    label: sc ? `Ratings · ${totA} vs ${totB}` : "Ratings", off: !sc },
+    { id:"scores",    label: scValid ? `Ratings · ${totA} vs ${totB}` : sc ? "Ratings · identical" : "Ratings", off: !sc },
   ];
 
   const stepModels = {
@@ -892,8 +917,16 @@ Return ONLY this JSON:
                 </div>
               )}
 
+              {/* ── Ratings — identical versions ── */}
+              {tab==="scores"&&sc&&!scValid&&(
+                <div style={{textAlign:"center",padding:"40px 20px"}}>
+                  <div style={{fontSize:15,fontWeight:600,color:C.warn,marginBottom:8}}>Both versions identical</div>
+                  <div style={{fontSize:13,color:C.muted,lineHeight:1.7,maxWidth:420,margin:"0 auto"}}>{sc.summary}</div>
+                </div>
+              )}
+
               {/* ── Ratings ── */}
-              {tab==="scores"&&sc&&(()=>{
+              {tab==="scores"&&sc&&scValid&&(()=>{
                 const currentEntry = history.find(e => e.id === currentEntryId);
 
                 // Build dropdown options
