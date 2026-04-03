@@ -402,9 +402,9 @@ export default function App() {
       ? `Write an exam-ready lesson on "${topic}" for ${exam}.\nStructure: (1) core concept / mechanism, (2) key clinical features or decision points, (3) management or approach, (4) high-yield distinctions and pitfalls.\nTarget length: 200–250 words. No padding.`
       : `Write a single-best-answer MCQ on "${topic}" for ${exam}.\nInclude: a clinical stem (3–4 sentences, realistic scenario), 5 answer choices (one correct, four plausible distractors), the correct answer, and a 3–4 sentence explanation covering why the answer is correct and why each distractor is wrong.\nTarget length: 250–300 words.`;
 
-    // Helper: parse CRITIQUE / REVISED sections from a single review call
+    // Helper: parse CRITIQUE / ===REVISED=== sections from a single review call
     function parseReview(raw, original) {
-      const marker = /^REVISED:\s*/im;
+      const marker = /^===REVISED===\s*/im;
       const match = marker.exec(raw);
       if (!match) return { critique: raw.trim(), revised: original };
       const critique = raw.slice(0, match.index).replace(/^CRITIQUE:\s*/i, "").trim();
@@ -436,7 +436,7 @@ Rules for revision:
 - Do not change any sentence, phrase, or structure not directly related to the critique
 - The result should feel like the same document with targeted corrections, not a rewrite
 - If a critique point is ambiguous or the fix would risk making the content worse, leave that part unchanged`,
-        `Review this ${type} for ${exam}:\n\n${vA}\n\nRespond in exactly this format:\nCRITIQUE: <list genuine factual errors one per line, or "Accurate." if none>\nREVISED:\n<the corrected ${type}, or the original unchanged if no corrections needed>`,
+        `Review this ${type} for ${exam}:\n\n${vA}\n\nRespond in exactly this format:\nCRITIQUE: <list genuine factual errors one per line, or "Accurate." if none>\n===REVISED===\n<the corrected ${type}, or the original unchanged if no corrections needed>`,
         "Validate", 3000
       );
       const { critique: valCritique, revised: valRevised } = parseReview(valRaw, vA);
@@ -457,7 +457,7 @@ Rules for revision:
 - Integrate additions naturally into the existing flow — do not append a list at the end
 - The result should feel like the same document with targeted additions, not a rewrite
 - If integrating a gap would disrupt clarity more than it helps, leave that part unchanged`,
-        `Review this ${type} for ${exam}:\n\n${valRevised}\n\nRespond in exactly this format:\nCRITIQUE: <list critical gaps one per line, or "Complete." if none>\nREVISED:\n<the strengthened ${type}, or the original unchanged if no additions needed>`,
+        `Review this ${type} for ${exam}:\n\n${valRevised}\n\nRespond in exactly this format:\nCRITIQUE: <list critical gaps one per line, or "Complete." if none>\n===REVISED===\n<the strengthened ${type}, or the original unchanged if no additions needed>`,
         "Adversarial", 3000
       );
       const { critique: advCritique, revised: vB } = parseReview(advRaw, valRevised);
@@ -466,10 +466,12 @@ Rules for revision:
       lg(`✓ Adversarial done — ${advChanged ? `revised (${vB.length} chars)` : "no changes"}`);
 
       lg("Step 4: Scoring both versions...");
+      lg(`  vA: ${vA.length} chars | vB: ${vB.length} chars`);
       stp("eval","running");
       // Blind the scorer: randomly assign vA/vB to v1/v2
       const scorerFlip = Math.random() > 0.5;
       const [v1text, v2text] = scorerFlip ? [vB, vA] : [vA, vB];
+      lg(`  Scorer sees: v1=${v1text.length} chars (${scorerFlip?"vB":"vA"}) | v2=${v2text.length} chars (${scorerFlip?"vA":"vB"})`);
       const evalRaw = await callLLM(
         modelGenB,
         `You are a rigorous medical education evaluator. Return ONLY valid JSON — no markdown, no backticks, nothing else.
