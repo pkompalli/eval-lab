@@ -468,42 +468,58 @@ Rules for revision:
       lg("Step 4: Scoring both versions...");
       lg(`  vA: ${vA.length} chars | vB: ${vB.length} chars`);
 
-      // If pipeline made no changes, versions are identical — scoring would be noise
-      if (vB.trim() === vA.trim()) {
-        stp("eval","complete");
-        const noChangeScores = {
-          vA: null, vB: null, winner: null,
-          summary: "Reviewer pipeline found no issues — both versions are identical. No meaningful score difference possible.",
-        };
-        res("scores", noChangeScores);
-        lg("⚠ Versions identical — skipping scorer (both reviewers found nothing to change)");
-        const entry = {
-          id: Date.now(),
-          timestamp: new Date().toISOString(),
-          topic, contentType: ct, exam,
-          models: { vA: modelA, genB: modelGenB, validator: modelVal, adversarial: modelAdv },
-          results: { vA, valRevised, vB, valCritique, advCritique, scores: noChangeScores },
-        };
-        saveToHistory(entry);
-        setHistory(loadHistory());
-        setCurrentEntryId(entry.id);
-        setPhase("done"); setTab("scores");
-        return;
-      }
-
       stp("eval","running");
-      // Blind the scorer: randomly assign vA/vB to v1/v2
-      const scorerFlip = Math.random() > 0.5;
-      const [v1text, v2text] = scorerFlip ? [vB, vA] : [vA, vB];
-      lg(`  Scorer sees: v1=${v1text.length} chars (${scorerFlip?"vB":"vA"}) | v2=${v2text.length} chars (${scorerFlip?"vA":"vB"})`);
-      const evalRaw = await callLLM(
-        modelGenB,
-        `You are a rigorous medical education evaluator. Return ONLY valid JSON — no markdown, no backticks, nothing else.
+
+      const versionsIdentical = vB.trim() === vA.trim();
+      let scores;
+
+      if (versionsIdentical) {
+        // Score once — apply same result to both
+        lg("  Versions identical — scoring once for absolute quality");
+        const evalRaw = await callLLM(
+          modelGenB,
+          `You are a rigorous medical education evaluator. Return ONLY valid JSON — no markdown, no backticks, nothing else.
+Evaluation principles:
+- Relevant clinical context (contraindications, caveats, decision criteria) is educational value — do not penalise completeness
+- Conciseness is only a virtue when nothing important is omitted
+- Do not penalise formatting differences unless one genuinely aids learning more than the other`,
+          `Rate the absolute quality of this ${type} on "${topic}" for ${exam}.
+
+CONTENT:
+${vA}
+
+Criteria:
+- accuracy: factual correctness — errors, outdated info, misleading claims
+- clarity: teaching effectiveness — structure, explanation quality, logical flow
+- retention: memorability — hooks, patterns, anchors for recall under exam pressure
+- examYield: right content for what ${exam} actually tests, at the right depth
+
+For each criterion write 1–2 sentences of specific feedback and assign a score out of 10.
+A score of 9+ means near-perfect for this exam. A version with real gaps should not score 9+.
+
+Return ONLY this JSON:
+{"accuracy":{"feedback":"...","score":8},"clarity":{"feedback":"...","score":8},"retention":{"feedback":"...","score":7},"examYield":{"feedback":"...","score":8},"summary":"one sentence overall assessment"}`,
+          "Eval", 2000
+        );
+        let single;
+        try { single = JSON.parse(evalRaw.replace(/```json\n?|```/g,"").trim()); }
+        catch { throw new Error(`Score parse failed. Raw: "${evalRaw.slice(0,200)}"`); }
+        const singleScores = { accuracy: single.accuracy, clarity: single.clarity, retention: single.retention, examYield: single.examYield };
+        scores = { vA: singleScores, vB: singleScores, winner: null, summary: single.summary, identical: true };
+
+      } else {
+        // Blind the scorer: randomly assign vA/vB to v1/v2
+        const scorerFlip = Math.random() > 0.5;
+        const [v1text, v2text] = scorerFlip ? [vB, vA] : [vA, vB];
+        lg(`  Scorer sees: v1=${v1text.length} chars (${scorerFlip?"vB":"vA"}) | v2=${v2text.length} chars (${scorerFlip?"vA":"vB"})`);
+        const evalRaw = await callLLM(
+          modelGenB,
+          `You are a rigorous medical education evaluator. Return ONLY valid JSON — no markdown, no backticks, nothing else.
 Evaluation principles:
 - Relevant clinical context (contraindications, caveats, decision criteria) is educational value — do not penalise completeness
 - Conciseness is only a virtue when nothing important is omitted
 - Do not penalise formatting differences (bullets vs prose, caps vs italics) unless one genuinely aids learning more than the other`,
-        `Score two ${type}s on "${topic}" for ${exam}.
+          `Score two ${type}s on "${topic}" for ${exam}.
 
 VERSION 1:
 ${v1text}
@@ -524,20 +540,18 @@ For each criterion:
 
 Return ONLY this JSON:
 {"v1":{"accuracy":{"feedback":"...","score":6},"clarity":{"feedback":"...","score":6},"retention":{"feedback":"...","score":7},"examYield":{"feedback":"...","score":6}},"v2":{"accuracy":{"feedback":"...","score":9},"clarity":{"feedback":"...","score":9},"retention":{"feedback":"...","score":8},"examYield":{"feedback":"...","score":9}},"winner":"1 or 2","summary":"one sentence"}`,
-        "Eval", 3000
-      );
-      let rawScores;
-      try { rawScores = JSON.parse(evalRaw.replace(/```json\n?|```/g,"").trim()); }
-      catch { throw new Error(`Score parse failed. Raw: "${evalRaw.slice(0,200)}"`); }
-      // Unblind: map v1/v2 back to vA/vB
-      const scores = {
-        vA: scorerFlip ? rawScores.v2 : rawScores.v1,
-        vB: scorerFlip ? rawScores.v1 : rawScores.v2,
-        winner: rawScores.winner === "1"
-          ? (scorerFlip ? "B" : "A")
-          : (scorerFlip ? "A" : "B"),
-        summary: rawScores.summary,
-      };
+          "Eval", 3000
+        );
+        let rawScores;
+        try { rawScores = JSON.parse(evalRaw.replace(/```json\n?|```/g,"").trim()); }
+        catch { throw new Error(`Score parse failed. Raw: "${evalRaw.slice(0,200)}"`); }
+        scores = {
+          vA: scorerFlip ? rawScores.v2 : rawScores.v1,
+          vB: scorerFlip ? rawScores.v1 : rawScores.v2,
+          winner: rawScores.winner === "1" ? (scorerFlip ? "B" : "A") : (scorerFlip ? "A" : "B"),
+          summary: rawScores.summary,
+        };
+      }
       stp("eval","complete"); res("scores", scores); lg("✓ Complete");
 
       const entry = {
@@ -559,17 +573,16 @@ Return ONLY this JSON:
   }, [topic, ct, exam, phase, modelA, modelGenB, modelVal, modelAdv]);
 
   // ── Derived values ────────────────────────────────────────────────
-  const sc      = R.scores;
-  const scValid = sc && sc.vA && sc.vB;
-  const totA = scValid ? totalScore(sc.vA) : 0;
-  const totB = scValid ? totalScore(sc.vB) : 0;
+  const sc   = R.scores;
+  const totA = sc?.vA ? totalScore(sc.vA) : 0;
+  const totB = sc?.vB ? totalScore(sc.vB) : 0;
 
   const tabs = [
     { id:"history",   label:`History${history.length ? ` (${history.length})` : ""}` },
     { id:"pipeline",  label:"Pipeline",  off: phase==="idle" },
     { id:"content",   label:"Content",   off: !R.vA },
     { id:"critiques", label:"Critiques", off: !R.valCritique },
-    { id:"scores",    label: scValid ? `Ratings · ${totA} vs ${totB}` : sc ? "Ratings · identical" : "Ratings", off: !sc },
+    { id:"scores",    label: sc ? (sc.identical ? `Ratings · ${totA} (identical)` : `Ratings · ${totA} vs ${totB}`) : "Ratings", off: !sc },
   ];
 
   const stepModels = {
@@ -917,16 +930,15 @@ Return ONLY this JSON:
                 </div>
               )}
 
-              {/* ── Ratings — identical versions ── */}
-              {tab==="scores"&&sc&&!scValid&&(
-                <div style={{textAlign:"center",padding:"40px 20px"}}>
-                  <div style={{fontSize:15,fontWeight:600,color:C.warn,marginBottom:8}}>Both versions identical</div>
-                  <div style={{fontSize:13,color:C.muted,lineHeight:1.7,maxWidth:420,margin:"0 auto"}}>{sc.summary}</div>
+              {/* ── Ratings — identical versions notice ── */}
+              {tab==="scores"&&sc?.identical&&(
+                <div style={{background:"rgba(245,192,102,0.07)",border:`1px solid ${C.warn}44`,borderRadius:7,padding:"10px 14px",marginBottom:14,fontSize:13,color:C.warn}}>
+                  Reviewer pipeline found no issues to fix — both versions are identical. Scored once for absolute quality.
                 </div>
               )}
 
               {/* ── Ratings ── */}
-              {tab==="scores"&&sc&&scValid&&(()=>{
+              {tab==="scores"&&sc&&sc.vA&&(()=>{
                 const currentEntry = history.find(e => e.id === currentEntryId);
 
                 // Build dropdown options
