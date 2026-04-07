@@ -31,10 +31,10 @@ export default function RatingView({ evalId }) {
   const [submitErr, setSubmitErr] = useState(null);
 
   useEffect(() => {
-    supabase
-      .from('evals')
-      .select('id,topic,content_type,exam,blind')
-      .eq('id', evalId)
+    // Support both UUID (old links) and short_code (new short links)
+    const isUUID = evalId.includes('-');
+    const query  = supabase.from('evals').select('id,topic,content_type,exam,blind');
+    (isUUID ? query.eq('id', evalId) : query.eq('short_code', evalId))
       .single()
       .then(({ data, error }) => {
         if (error) setFetchErr(error.message);

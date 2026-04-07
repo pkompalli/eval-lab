@@ -153,6 +153,12 @@ function ModelSelect({ label, value, onChange, disabled }) {
   );
 }
 
+// ─── Short-code generator (8 alphanumeric chars) ───────────────────────
+function genShortCode() {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+}
+
 // ─── App ───────────────────────────────────────────────────────────────
 export default function App() {
 
@@ -277,7 +283,7 @@ export default function App() {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
   };
 
-  // Push eval to Supabase and copy share link to clipboard
+  // Push eval to Supabase and copy short share link to clipboard
   const shareEval = async (entry) => {
     if (!process.env.REACT_APP_SUPABASE_URL || !process.env.REACT_APP_SUPABASE_ANON_KEY) {
       setErr("Share failed: REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY are not set in .env — add them and restart the dev server.");
@@ -287,15 +293,19 @@ export default function App() {
     try {
       let supabaseId = entry.supabaseId;
       let v1IsVA     = entry.v1IsVA;
+      let shortCode  = entry.shortCode;
 
       if (!supabaseId) {
-        v1IsVA = Math.random() > 0.5;
+        // First time uploading this eval
+        v1IsVA    = Math.random() > 0.5;
+        shortCode = genShortCode();
         const { data, error } = await supabase.from("evals").insert({
           local_id:     String(entry.id),
           topic:        entry.topic,
           content_type: entry.contentType,
           exam:         entry.exam,
           models:       entry.models,
+          short_code:   shortCode,
           blind: {
             v1_text:  v1IsVA ? entry.results.vA : entry.results.vB,
             v2_text:  v1IsVA ? entry.results.vB : entry.results.vA,
@@ -303,20 +313,32 @@ export default function App() {
           },
           ai_scores:    entry.results.scores,
           full_results: entry.results,
-        }).select("id").single();
+        }).select("id,short_code").single();
 
         if (error) throw error;
         supabaseId = data.id;
+        shortCode  = data.short_code;
 
-        // Persist supabaseId + blinding back to localStorage
-        const updated = updateInHistory(entry.id, { supabaseId, v1IsVA });
+        // Persist supabaseId + shortCode + blinding back to localStorage
+        const updated = updateInHistory(entry.id, { supabaseId, shortCode, v1IsVA });
         setHistory(updated);
 
         // If this is the currently viewed eval, set sharedEval
         if (entry.id === currentEntryId) setSharedEval({ supabaseId, v1IsVA });
+      } else if (!shortCode) {
+        // Eval already uploaded but was shared before short codes — fetch or assign one
+        const { data } = await supabase.from("evals").select("short_code").eq("id", supabaseId).single();
+        if (data?.short_code) {
+          shortCode = data.short_code;
+        } else {
+          shortCode = genShortCode();
+          await supabase.from("evals").update({ short_code: shortCode }).eq("id", supabaseId);
+        }
+        const updated = updateInHistory(entry.id, { shortCode });
+        setHistory(updated);
       }
 
-      const url = `${window.location.origin}/#rate/${supabaseId}`;
+      const url = `${window.location.origin}/#rate/${shortCode}`;
       await navigator.clipboard.writeText(url);
       setCopiedId(entry.id);
       setTimeout(() => setCopiedId(id => id === entry.id ? null : id), 2500);
@@ -371,9 +393,14 @@ export default function App() {
 
       // Randomize: shuffle eval order + flip v1/v2 display independently per eval
       const shuffled = [...pairs].sort(() => Math.random() - 0.5);
-      const parts = shuffled.map(({ supabaseId }) => `${supabaseId}:${Math.random() > 0.5 ? 1 : 0}`);
+      const items = shuffled.map(({ supabaseId }) => ({ id: supabaseId, flip: Math.random() > 0.5 }));
 
-      const url = `${window.location.origin}/#batch/${parts.join(",")}`;
+      // Store batch config and use short code in URL
+      const shortCode = genShortCode();
+      const { error: batchErr } = await supabase.from("batch_links").insert({ short_code: shortCode, items });
+      if (batchErr) throw batchErr;
+
+      const url = `${window.location.origin}/#batch/${shortCode}`;
       await navigator.clipboard.writeText(url);
       setBatchCopied(true);
       setTimeout(() => setBatchCopied(false), 2500);
@@ -417,7 +444,11 @@ export default function App() {
       stp("genA","running");
       const vA = await callLLM(
         modelA,
-        `You are a medical educator creating ${exam} study material. Write clearly, accurately, and at the right depth for the exam level.`,
+        `You are a medical educator creating ${exam} study material. Write clearly, accurately, and at the right depth for the exam level.
+When content involves multiple comparable items — drug choices by scenario, decision thresholds, or step-by-step sequences — present them as a compact indented comparison rather than dense prose. Example format:
+  Setting A  →  Drug X (reason)
+  Setting B  →  Drug Y (reason)
+This aids retention without increasing word count.`,
         genPrompt, "Gen-A", 2000
       );
       stp("genA","complete"); res("vA", vA); res("draft", vA);
@@ -455,6 +486,9 @@ Rules for revision:
 - Add or adjust only what the critique identifies as a critical gap
 - Do not restructure, reformat, or rewrite sections unrelated to the gap
 - Integrate additions naturally into the existing flow — do not append a list at the end
+- If adding multiple related items (e.g. drug choices by scenario, thresholds by condition) would increase prose density, present them as a compact indented comparison instead:
+    Setting A  →  Drug X (reason)
+    Setting B  →  Drug Y (reason)
 - The result should feel like the same document with targeted additions, not a rewrite
 - If integrating a gap would disrupt clarity more than it helps, leave that part unchanged`,
         `Review this ${type} for ${exam}:\n\n${valRevised}\n\nRespond in exactly this format:\nCRITIQUE: <list critical gaps one per line, or "Complete." if none>\n===REVISED===\n<the strengthened ${type}, or the original unchanged if no additions needed>`,
@@ -514,11 +548,13 @@ Return ONLY this JSON:
         lg(`  Scorer sees: v1=${v1text.length} chars (${scorerFlip?"vB":"vA"}) | v2=${v2text.length} chars (${scorerFlip?"vA":"vB"})`);
         const evalRaw = await callLLM(
           modelGenB,
-          `You are a rigorous medical education evaluator. Return ONLY valid JSON — no markdown, no backticks, nothing else.
+          `You are a rigorous medical education evaluator for ${exam}. Return ONLY valid JSON — no markdown, no backticks, nothing else.
 Evaluation principles:
-- Relevant clinical context (contraindications, caveats, decision criteria) is educational value — do not penalise completeness
-- Conciseness is only a virtue when nothing important is omitted
-- Do not penalise formatting differences (bullets vs prose, caps vs italics) unless one genuinely aids learning more than the other`,
+- This is exam-prep content. Clinical precision beats prose elegance.
+- A version that adds specific numeric thresholds, drug-class rules, or contraindications that ${exam} directly tests is BETTER — not penalised — on Clarity, Retention, and Exam-Yield. More detail is only a flaw when the detail is irrelevant or untestable.
+- Ask yourself for every added detail: "Could this appear on ${exam}?" If yes, it is content, not noise.
+- Conciseness is a virtue only when nothing testable is omitted. A shorter version that omits a classic exam trap (e.g. pheochromocytoma: alpha-block before beta-block; tPA candidate BP threshold) is WORSE, not cleaner.
+- Do not penalise formatting differences unless one genuinely aids learning more than the other.`,
           `Score two ${type}s on "${topic}" for ${exam}.
 
 VERSION 1:
@@ -529,9 +565,9 @@ ${v2text}
 
 Criteria:
 - accuracy: factual correctness — errors, outdated info, misleading claims
-- clarity: teaching effectiveness — structure, explanation quality, logical flow
-- retention: memorability — hooks, patterns, anchors for recall under exam pressure
-- examYield: right content for what ${exam} actually tests, at the right depth
+- clarity: teaching effectiveness — structure, explanation quality, logical flow. A version is NOT penalised for density if the density comes from testable clinical rules.
+- retention: memorability — hooks, patterns, anchors for recall under exam pressure. Specific numbers and contraindications are memory anchors; reward them.
+- examYield: right content for what ${exam} actually tests, at the right depth. Missing a directly-tested rule (even if the version is otherwise good) must reduce this score.
 
 For each criterion:
 1. Compare versions directly — which is better and by how much? (negligible / minor / moderate / significant)

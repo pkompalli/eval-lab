@@ -21,12 +21,8 @@ function initScores() {
 }
 
 export default function BatchRatingView({ evalIds }) {
-  // Parse "uuid:flip" strings — flip=1 means swap v1/v2 display for that eval
-  const parsedIds = evalIds.map(s => {
-    const [id, flip] = s.split(":");
-    return { id, flip: flip === "1" };
-  });
-
+  // parsedItems: [{id, flip}] — populated from DB (short code) or parsed from URL (old format)
+  const [parsedItems, setParsedItems] = useState(null);
   const [evals,      setEvals]      = useState([]);
   const [activeType, setActiveType] = useState(null);
   const [idxByType,  setIdxByType]  = useState({});
@@ -39,22 +35,47 @@ export default function BatchRatingView({ evalIds }) {
   const [submitErr,  setSubmitErr]  = useState(null);
 
   useEffect(() => {
-    supabase.from('evals')
-      .select('id,topic,content_type,exam,blind')
-      .in('id', parsedIds.map(p => p.id))
-      .then(({ data, error }) => {
+    // Short code: single item with no colon → fetch from batch_links
+    const isShortCode = evalIds.length === 1 && !evalIds[0].includes(':');
+
+    async function load() {
+      let items; // [{id, flip}]
+      if (isShortCode) {
+        const { data, error } = await supabase.from('batch_links')
+          .select('items')
+          .eq('short_code', evalIds[0])
+          .single();
         if (error) { setFetchErr(error.message); setLoading(false); return; }
-        // preserve URL order (already shuffled by sharer)
-        const ordered = parsedIds.map(({ id }) => data.find(e => e.id === id)).filter(Boolean);
-        setEvals(ordered);
-        const init = {};
-        ordered.forEach(e => { init[e.id] = { v1: initScores(), v2: initScores() }; });
-        setAllScores(init);
-        const types = [...new Set(ordered.map(e => e.content_type))];
-        setActiveType(types[0] || null);
-        setIdxByType(Object.fromEntries(types.map(t => [t, 0])));
-        setLoading(false);
-      });
+        items = data.items; // stored as [{id, flip}]
+      } else {
+        // Old format: "uuid:0" or "uuid:1" comma-separated strings
+        items = evalIds.map(s => {
+          const [id, flip] = s.split(':');
+          return { id, flip: flip === '1' };
+        });
+      }
+
+      setParsedItems(items);
+
+      const { data, error } = await supabase.from('evals')
+        .select('id,topic,content_type,exam,blind')
+        .in('id', items.map(i => i.id));
+
+      if (error) { setFetchErr(error.message); setLoading(false); return; }
+
+      // Preserve sharer's order
+      const ordered = items.map(({ id }) => data.find(e => e.id === id)).filter(Boolean);
+      setEvals(ordered);
+      const init = {};
+      ordered.forEach(e => { init[e.id] = { v1: initScores(), v2: initScores() }; });
+      setAllScores(init);
+      const types = [...new Set(ordered.map(e => e.content_type))];
+      setActiveType(types[0] || null);
+      setIdxByType(Object.fromEntries(types.map(t => [t, 0])));
+      setLoading(false);
+    }
+
+    load();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setField = (evalId, ver, criterion, field, value) =>
@@ -77,7 +98,7 @@ export default function BatchRatingView({ evalIds }) {
   const currentIdx   = idxByType[activeType] ?? 0;
   const setCurrentIdx = (fn) => setIdxByType(prev => ({ ...prev, [activeType]: typeof fn === 'function' ? fn(prev[activeType] ?? 0) : fn }));
   const currentEval    = typeEvals[currentIdx];
-  const currentFlip    = parsedIds.find(p => p.id === currentEval?.id)?.flip || false;
+  const currentFlip    = parsedItems?.find(p => p.id === currentEval?.id)?.flip || false;
   const isCurrentValid = isEvalValid(currentEval);
   const isAllValid     = evals.length > 0 && evals.every(e => isEvalValid(e));
   const isLast         = currentIdx === typeEvals.length - 1;
@@ -86,7 +107,7 @@ export default function BatchRatingView({ evalIds }) {
     setSubmitting(true);
     setSubmitErr(null);
     const rows = evals.map(e => {
-      const flip = parsedIds.find(p => p.id === e.id)?.flip || false;
+      const flip = parsedItems?.find(p => p.id === e.id)?.flip || false;
       // If flipped, user's "v1" input corresponds to actual v2_text and vice versa — unflip before storing
       const raw = allScores[e.id];
       const [dbV1, dbV2] = flip ? [raw.v2, raw.v1] : [raw.v1, raw.v2];
